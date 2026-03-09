@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__claude_ai_Supabase__list_organizations",
+      "mcp__claude_ai_Supabase__list_projects",
+      "mcp__claude_ai_Supabase__get_project_url",
+      "mcp__claude_ai_Supabase__get_publishable_keys",
+      "Bash(test -f /c/Users/benja/projects/ardon-insights/.env.local)",
+      "Bash(npm install --legacy-peer-deps)",
+      "Bash(npm install tailwindcss-animate --legacy-peer-deps)",
+      "Bash(npm run dev)",
+      "WebSearch",
+      "Bash(powershell -Command \"Get-Process -Name node -ErrorAction SilentlyContinue | Stop-Process -Force; Write-Host ''done''\")",
+      "Bash(powershell -Command \"Get-Process -Name node -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep -Seconds 2; Set-Location ''C:\\\\Users\\\\benja\\\\projects\\\\ardon-insights''; Start-Process -FilePath ''cmd'' -ArgumentList ''/c npm run dev'' -NoNewWindow\")",
+      "mcp__claude_ai_Supabase__list_tables",
+      "Bash(npx tsc --noEmit)",
+      "mcp__claude_ai_Supabase__apply_migration",
+      "Bash(git add -A)",
+      "Bash(git commit:*)",
+      "Bash(git push -u origin master)"
+    ]
+  }
+}
