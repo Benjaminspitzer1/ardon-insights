@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 const PROPERTY_TYPES = ['Multifamily', 'Office', 'Retail', 'Industrial', 'Mixed Use', 'Land']
+const PROPERTY_STATUSES = ['active', 'pipeline', 'sold', 'inactive'] as const
 
 function Field({ label, children, className }: { label: string; children: React.ReactNode; className?: string }) {
   return (
@@ -38,6 +39,9 @@ export default function EditPropertyDialog({ open, onClose, property }: Props) {
   const [sf, setSf] = useState(String(property.sf ?? ''))
   const [units, setUnits] = useState(String(property.units ?? ''))
   const [yearBuilt, setYearBuilt] = useState(String(property.year_built ?? ''))
+  const [status, setStatus] = useState(property.status ?? 'pipeline')
+  const [lat, setLat] = useState(String(property.lat ?? ''))
+  const [lng, setLng] = useState(String(property.lng ?? ''))
   const [grossRental, setGrossRental] = useState(String(property.gross_rental_income ?? ''))
   const [otherIncome, setOtherIncome] = useState(String(property.other_income ?? ''))
   const [vacancyRate, setVacancyRate] = useState(String(property.vacancy_rate ?? '5'))
@@ -61,12 +65,15 @@ export default function EditPropertyDialog({ open, onClose, property }: Props) {
         city: city || null,
         state: state || null,
         zip: zip || '',
+        status,
         property_type: propertyType || 'multifamily',
         purchase_price: parseFloat(purchasePrice) || null,
         current_value: parseFloat(currentValue) || null,
         sf: parseFloat(sf) || null,
         units: parseFloat(units) || null,
         year_built: parseFloat(yearBuilt) || null,
+        lat: parseFloat(lat) || null,
+        lng: parseFloat(lng) || null,
         gross_rental_income: gross || null,
         other_income: other || null,
         vacancy_rate: vacancy || null,
@@ -103,14 +110,24 @@ export default function EditPropertyDialog({ open, onClose, property }: Props) {
               <Field label="State"><Input value={state} onChange={e => setState(e.target.value)} /></Field>
               <Field label="Zip"><Input value={zip} onChange={e => setZip(e.target.value)} /></Field>
             </div>
-            <Field label="Property Type">
-              <Select value={propertyType} onValueChange={setPropertyType}>
-                <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
-                <SelectContent>
-                  {PROPERTY_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Property Type">
+                <Select value={propertyType} onValueChange={setPropertyType}>
+                  <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
+                  <SelectContent>
+                    {PROPERTY_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field label="Status">
+                <Select value={status} onValueChange={setStatus}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {PROPERTY_STATUSES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </Field>
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Purchase Price ($)">
                 <Input type="number" value={purchasePrice} onChange={e => setPurchasePrice(e.target.value)} />
@@ -126,6 +143,14 @@ export default function EditPropertyDialog({ open, onClose, property }: Props) {
               </Field>
               <Field label="Year Built">
                 <Input type="number" value={yearBuilt} onChange={e => setYearBuilt(e.target.value)} />
+              </Field>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Latitude">
+                <Input type="number" step="any" value={lat} onChange={e => setLat(e.target.value)} placeholder="e.g. 40.7128" />
+              </Field>
+              <Field label="Longitude">
+                <Input type="number" step="any" value={lng} onChange={e => setLng(e.target.value)} placeholder="e.g. -74.0060" />
               </Field>
             </div>
           </div>
