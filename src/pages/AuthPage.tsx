@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react'
 import { Navigate } from 'react-router-dom'
-import { Building2, ShoppingBag } from 'lucide-react'
+import { Building2 } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 
 export default function AuthPage() {
   const { session } = useAuth()
@@ -67,20 +67,44 @@ export default function AuthPage() {
         </div>
 
         <Card>
-          <CardHeader>
-            <CardTitle>{mode === 'signin' ? 'Sign in' : 'Create account'}</CardTitle>
+          <CardHeader className="pb-0">
+            {/* Tab switcher */}
+            <div className="flex rounded-lg border border-border bg-muted p-1 mb-4">
+              <button
+                type="button"
+                className={`flex-1 rounded-md py-2 text-sm font-medium transition-colors ${
+                  mode === 'signin'
+                    ? 'bg-card text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+                onClick={() => { setMode('signin'); setError(null); setMessage(null) }}
+              >
+                Sign in
+              </button>
+              <button
+                type="button"
+                className={`flex-1 rounded-md py-2 text-sm font-medium transition-colors ${
+                  mode === 'signup'
+                    ? 'bg-card text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+                onClick={() => { setMode('signup'); setError(null); setMessage(null) }}
+              >
+                Create account
+              </button>
+            </div>
+            <CardTitle className="sr-only">{mode === 'signin' ? 'Sign in' : 'Create account'}</CardTitle>
             <CardDescription>
-              {mode === 'signin' ? 'Enter your credentials to access your portal' : 'Start your 14-day free trial'}
+              {mode === 'signin' ? 'Access your investment portal' : 'Start your 14-day free trial'}
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-4 pt-4">
             {/* Social sign-in buttons */}
-            <div className="space-y-3">
-              <Button
-                variant="outline"
-                className="w-full gap-3"
+            <div className="grid grid-cols-2 gap-3">
+              <button
                 type="button"
                 onClick={handleGoogleSignIn}
+                className="flex items-center justify-center gap-2.5 rounded-lg border border-border bg-white px-4 py-2.5 text-sm font-medium text-gray-700 shadow-sm transition-all hover:bg-gray-50 hover:shadow-md active:scale-[0.98]"
               >
                 <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24">
                   <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
@@ -88,14 +112,13 @@ export default function AuthPage() {
                   <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
                   <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
                 </svg>
-                Continue with Google
-              </Button>
+                Google
+              </button>
 
-              <Button
-                variant="outline"
-                className="w-full gap-3"
+              <button
                 type="button"
                 onClick={handleMicrosoftSignIn}
+                className="flex items-center justify-center gap-2.5 rounded-lg border border-border bg-[#2F2F2F] px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-all hover:bg-[#1a1a1a] hover:shadow-md active:scale-[0.98]"
               >
                 <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none">
                   <rect x="1" y="1" width="10.5" height="10.5" fill="#F25022"/>
@@ -103,19 +126,8 @@ export default function AuthPage() {
                   <rect x="1" y="12.5" width="10.5" height="10.5" fill="#00A4EF"/>
                   <rect x="12.5" y="12.5" width="10.5" height="10.5" fill="#FFB900"/>
                 </svg>
-                Continue with Microsoft
-              </Button>
-
-              <Button
-                variant="outline"
-                className="w-full gap-3 opacity-50"
-                type="button"
-                disabled
-              >
-                <ShoppingBag className="h-4 w-4 shrink-0" />
-                Amazon (coming soon)
-              </Button>
-
+                Microsoft
+              </button>
             </div>
 
             {/* Divider */}
@@ -158,18 +170,6 @@ export default function AuthPage() {
               </Button>
             </form>
           </CardContent>
-          <CardFooter>
-            <p className="text-sm text-muted-foreground">
-              {mode === 'signin' ? "Don't have an account? " : 'Already have an account? '}
-              <button
-                type="button"
-                className="text-brand-teal-light hover:underline"
-                onClick={() => setMode(mode === 'signin' ? 'signup' : 'signin')}
-              >
-                {mode === 'signin' ? 'Sign up' : 'Sign in'}
-              </button>
-            </p>
-          </CardFooter>
         </Card>
       </div>
     </div>
