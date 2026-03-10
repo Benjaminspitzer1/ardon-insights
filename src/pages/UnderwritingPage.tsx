@@ -529,6 +529,11 @@ export default function UnderwritingPage() {
               Advance to {STAGE_LABELS[nextStage]}
             </Button>
           )}
+          <Button variant="outline" size="sm" className="gap-2" asChild>
+            <Link to={`/deal-flow/${dealId}/sensitivity`}>
+              <TrendingUp className="h-4 w-4" /> Sensitivity
+            </Link>
+          </Button>
           <Button
             variant="outline"
             size="sm"

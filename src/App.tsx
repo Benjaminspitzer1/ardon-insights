@@ -47,6 +47,8 @@ export default function App() {
                 <Route path="/news" element={<NewsPage />} />
                 <Route path="/documents" element={<DocumentsPage />} />
                 <Route path="/sensitivity-analysis" element={<SensitivityAnalysisPage />} />
+                <Route path="/deal-flow/:dealId/sensitivity" element={<SensitivityAnalysisPage />} />
+                <Route path="/properties/:propertyId/sensitivity" element={<SensitivityAnalysisPage />} />
                 <Route path="/cash-flow" element={<CashFlowPage />} />
                 <Route path="/financing" element={<FinancingPage />} />
                 <Route path="/operating-expenses" element={<OperatingExpensesPage />} />

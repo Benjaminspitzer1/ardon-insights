@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import ImportExcelDialog from '@/components/ImportExcelDialog'
 import EditPropertyDialog from '@/components/EditPropertyDialog'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, MapPin, Building2, Calendar, DollarSign, FileText, FileSpreadsheet, File, Image, Trash2, Upload, Download, Pencil, Plus, Check, X } from 'lucide-react'
+import { ArrowLeft, MapPin, Building2, Calendar, DollarSign, FileText, FileSpreadsheet, File, Image, Trash2, Upload, Download, Pencil, Plus, Check, X, TrendingUp } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useAuth } from '@/hooks/useAuth'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -379,6 +379,11 @@ export default function PropertyPage() {
             {property.address}, {property.city}, {property.state} {property.zip}
           </p>
         </div>
+        <Button variant="outline" size="sm" className="gap-2 shrink-0" asChild>
+          <Link to={`/properties/${propertyId}/sensitivity`}>
+            <TrendingUp className="h-4 w-4" /> Sensitivity
+          </Link>
+        </Button>
         <Button variant="outline" size="sm" className="gap-2 shrink-0" onClick={() => setEditOpen(true)}>
           <Pencil className="h-4 w-4" /> Edit Property
         </Button>

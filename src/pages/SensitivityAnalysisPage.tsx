@@ -1,14 +1,31 @@
 import { useState, useMemo } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend, ComposedChart
 } from 'recharts'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { supabase } from '@/lib/supabaseClient'
+import { useAuth } from '@/hooks/useAuth'
 import { calcIRR } from '@/lib/calculators'
 import { cn } from '@/lib/utils'
 
-const BASE_PARAMS = {
+type SensParams = {
+  baseNOI: number
+  purchasePrice: number
+  holdYears: number
+  loanAmount: number
+  annualDebtService: number
+  equityInvested: number
+}
+
+const FALLBACK: SensParams = {
   baseNOI: 500_000,
   purchasePrice: 8_000_000,
   holdYears: 5,
@@ -17,17 +34,24 @@ const BASE_PARAMS = {
   equityInvested: 2_400_000,
 }
 
-function computeIRR(exitCap: number, rentGrowth: number): number {
-  const cashFlows: number[] = [-BASE_PARAMS.equityInvested]
-  let noi = BASE_PARAMS.baseNOI
-  for (let yr = 1; yr <= BASE_PARAMS.holdYears; yr++) {
+function computeAnnualDebtService(loanAmount: number, rate: number, amortYears: number): number {
+  const r = rate / 12
+  const n = amortYears * 12
+  if (r === 0 || n === 0) return 0
+  return (loanAmount * r / (1 - Math.pow(1 + r, -n))) * 12
+}
+
+function computeIRR(exitCap: number, rentGrowth: number, p: SensParams): number {
+  const cashFlows: number[] = [-p.equityInvested]
+  let noi = p.baseNOI
+  for (let yr = 1; yr <= p.holdYears; yr++) {
     noi = noi * (1 + rentGrowth / 100)
-    const levered = noi - BASE_PARAMS.annualDebtService
-    if (yr < BASE_PARAMS.holdYears) {
+    const levered = noi - p.annualDebtService
+    if (yr < p.holdYears) {
       cashFlows.push(levered)
     } else {
       const exitValue = noi / (exitCap / 100)
-      const netSale = exitValue - BASE_PARAMS.loanAmount - exitValue * 0.02
+      const netSale = exitValue - p.loanAmount - exitValue * 0.02
       cashFlows.push(levered + netSale)
     }
   }
@@ -38,22 +62,22 @@ function computeIRR(exitCap: number, rentGrowth: number): number {
   }
 }
 
-function computeEM(exitCap: number, rentGrowth: number): number {
-  const cashFlows: number[] = [-BASE_PARAMS.equityInvested]
-  let noi = BASE_PARAMS.baseNOI
-  for (let yr = 1; yr <= BASE_PARAMS.holdYears; yr++) {
+function computeEM(exitCap: number, rentGrowth: number, p: SensParams): number {
+  const cashFlows: number[] = [-p.equityInvested]
+  let noi = p.baseNOI
+  for (let yr = 1; yr <= p.holdYears; yr++) {
     noi = noi * (1 + rentGrowth / 100)
-    const levered = noi - BASE_PARAMS.annualDebtService
-    if (yr < BASE_PARAMS.holdYears) {
+    const levered = noi - p.annualDebtService
+    if (yr < p.holdYears) {
       cashFlows.push(levered)
     } else {
       const exitValue = noi / (exitCap / 100)
-      const netSale = exitValue - BASE_PARAMS.loanAmount - exitValue * 0.02
+      const netSale = exitValue - p.loanAmount - exitValue * 0.02
       cashFlows.push(levered + netSale)
     }
   }
   const total = cashFlows.slice(1).reduce((a, b) => a + b, 0)
-  return total / BASE_PARAMS.equityInvested
+  return total / p.equityInvested
 }
 
 const EXIT_CAPS = [5.50, 5.75, 6.00, 6.25, 6.50, 6.75, 7.00, 7.25, 7.50]
@@ -91,47 +115,241 @@ function SliderRow({
   )
 }
 
+function ParamInput({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
+  return (
+    <div className="space-y-1">
+      <Label className="text-xs text-muted-foreground">{label}</Label>
+      <Input
+        type="number"
+        value={value || ''}
+        onChange={e => onChange(parseFloat(e.target.value) || 0)}
+        className="h-8 text-sm"
+      />
+    </div>
+  )
+}
+
 export default function SensitivityAnalysisPage() {
+  const { dealId, propertyId } = useParams<{ dealId?: string; propertyId?: string }>()
+  const navigate = useNavigate()
+  const { user } = useAuth()
+
   const [exitCap, setExitCap] = useState(6.5)
   const [rentGrowth, setRentGrowth] = useState(3.0)
   const [vacancyRate, setVacancyRate] = useState(5.0)
+  const [overrides, setOverrides] = useState<Partial<SensParams>>({})
+
+  const isScoped = !!(dealId || propertyId)
+
+  // Fetch deal when on deal-scoped route
+  const { data: deal } = useQuery({
+    queryKey: ['deal-sensitivity', dealId],
+    queryFn: async () => {
+      const { data } = await supabase.from('deals').select('*').eq('id', dealId!).single()
+      return data
+    },
+    enabled: !!dealId,
+  })
+
+  // Resolve property id from either route param or deal FK
+  const resolvedPropertyId = propertyId ?? deal?.property_id
+
+  const { data: property } = useQuery({
+    queryKey: ['property-sensitivity', resolvedPropertyId],
+    queryFn: async () => {
+      const { data } = await supabase.from('properties').select('*').eq('id', resolvedPropertyId!).single()
+      return data
+    },
+    enabled: !!resolvedPropertyId,
+  })
+
+  const { data: tranches } = useQuery({
+    queryKey: ['debt-tranches-sensitivity', resolvedPropertyId],
+    queryFn: async () => {
+      const { data } = await supabase.from('debt_tranches').select('*').eq('property_id', resolvedPropertyId!)
+      return data ?? []
+    },
+    enabled: !!resolvedPropertyId,
+  })
+
+  // For landing selectors
+  const { data: allDeals } = useQuery({
+    queryKey: ['all-deals-sens', user?.id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('deals')
+        .select('id, properties(name)')
+        .order('created_at', { ascending: false })
+      return data ?? []
+    },
+    enabled: !isScoped && !!user,
+  })
+
+  const { data: allProperties } = useQuery({
+    queryKey: ['all-properties-sens', user?.id],
+    queryFn: async () => {
+      const { data } = await supabase.from('properties').select('id, name').order('name', { ascending: true })
+      return data ?? []
+    },
+    enabled: !isScoped && !!user,
+  })
+
+  // Derive params from fetched data
+  const fetchedParams = useMemo<Partial<SensParams>>(() => {
+    if (!property) return {}
+    const totalLoan = (tranches ?? []).reduce((s: number, t: any) => s + (t.loan_amount ?? 0), 0)
+    const totalDebtService = (tranches ?? []).reduce((s: number, t: any) => {
+      return s + computeAnnualDebtService(t.loan_amount ?? 0, (t.rate ?? 0) / 100, t.amortization ?? 30)
+    }, 0)
+    return {
+      baseNOI: property.noi ?? undefined,
+      purchasePrice: property.purchase_price ?? deal?.asking_price ?? undefined,
+      loanAmount: totalLoan > 0 ? totalLoan : undefined,
+      annualDebtService: totalDebtService > 0 ? totalDebtService : undefined,
+    }
+  }, [property, tranches, deal])
+
+  const set = (k: keyof SensParams) => (v: number) => setOverrides(p => ({ ...p, [k]: v }))
+
+  // Merge: overrides win, then fetched, then fallback
+  const params: SensParams = useMemo(() => {
+    const purchasePrice = overrides.purchasePrice ?? fetchedParams.purchasePrice ?? FALLBACK.purchasePrice
+    const loanAmount = overrides.loanAmount ?? fetchedParams.loanAmount ?? FALLBACK.loanAmount
+    return {
+      baseNOI: overrides.baseNOI ?? fetchedParams.baseNOI ?? FALLBACK.baseNOI,
+      purchasePrice,
+      holdYears: overrides.holdYears ?? FALLBACK.holdYears,
+      loanAmount,
+      annualDebtService: overrides.annualDebtService ?? fetchedParams.annualDebtService ?? FALLBACK.annualDebtService,
+      equityInvested: overrides.equityInvested ?? (purchasePrice - loanAmount),
+    }
+  }, [overrides, fetchedParams])
 
   const irrChartData = useMemo(() =>
     EXIT_CAPS.map(cap => ({
       cap: `${cap.toFixed(2)}%`,
-      ...Object.fromEntries(RENT_GROWTHS.map(rg => [`${rg}% Growth`, parseFloat(computeIRR(cap, rg).toFixed(2))])),
+      ...Object.fromEntries(RENT_GROWTHS.map(rg => [`${rg}% Growth`, parseFloat(computeIRR(cap, rg, params).toFixed(2))])),
     })),
-    []
+    [params]
   )
 
   const sensitivityMatrix = useMemo(() =>
     EXIT_CAPS.map(cap =>
-      RENT_GROWTHS.map(rg => parseFloat(computeIRR(cap, rg).toFixed(1)))
+      RENT_GROWTHS.map(rg => parseFloat(computeIRR(cap, rg, params).toFixed(1)))
     ),
-    []
+    [params]
   )
 
   const customData = useMemo(() =>
     RENT_GROWTHS.map(rg => ({
       growth: `${rg}%`,
-      IRR: parseFloat(computeIRR(exitCap, rg).toFixed(2)),
-      'Equity Multiple': parseFloat(computeEM(exitCap, rg).toFixed(2)),
+      IRR: parseFloat(computeIRR(exitCap, rg, params).toFixed(2)),
+      'Equity Multiple': parseFloat(computeEM(exitCap, rg, params).toFixed(2)),
     })),
-    [exitCap]
+    [exitCap, params]
   )
+
+  const contextName = property?.name ?? null
+  const contextBadge = dealId ? 'Deal-level' : propertyId ? 'Property-level' : null
+
+  // Landing — no context selected
+  if (!isScoped) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold">Sensitivity Analysis</h1>
+          <p className="text-sm text-muted-foreground">Select a deal or property to run a scoped analysis</p>
+        </div>
+
+        <Card>
+          <CardContent className="pt-6 space-y-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label>Analyze a Deal</Label>
+                <Select onValueChange={v => navigate(`/deal-flow/${v}/sensitivity`)}>
+                  <SelectTrigger><SelectValue placeholder="Select a deal…" /></SelectTrigger>
+                  <SelectContent>
+                    {(allDeals ?? []).map((d: any) => (
+                      <SelectItem key={d.id} value={d.id}>
+                        {(d.properties as any)?.name ?? d.id}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Analyze a Property</Label>
+                <Select onValueChange={v => navigate(`/properties/${v}/sensitivity`)}>
+                  <SelectTrigger><SelectValue placeholder="Select a property…" /></SelectTrigger>
+                  <SelectContent>
+                    {(allProperties ?? []).map((p: any) => (
+                      <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <div className="relative">
+          <div className="pointer-events-none select-none opacity-25 blur-sm">
+            <Card>
+              <CardHeader><CardTitle className="text-base">Key Parameter Adjustments</CardTitle></CardHeader>
+              <CardContent className="h-32" />
+            </Card>
+            <Card className="mt-4">
+              <CardHeader><CardTitle className="text-base">Scenario Analysis</CardTitle></CardHeader>
+              <CardContent className="h-48" />
+            </Card>
+          </div>
+          <div className="absolute inset-0 flex items-center justify-center">
+            <p className="rounded-md bg-card/80 px-4 py-2 text-sm font-medium text-muted-foreground shadow">
+              Select a deal or property above to unlock
+            </p>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">Sensitivity Analysis</h1>
+        <div className="flex items-center gap-2 mb-1">
+          <h1 className="text-2xl font-bold">
+            Sensitivity Analysis{contextName ? ` — ${contextName}` : ''}
+          </h1>
+          {contextBadge && <Badge variant="secondary">{contextBadge}</Badge>}
+        </div>
         <p className="text-sm text-muted-foreground">Model how changes in key assumptions affect returns</p>
       </div>
+
+      {/* Editable base parameters — always shown when scoped */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Base Parameters</CardTitle>
+          <CardDescription className="text-xs">
+            Pre-filled from your {dealId ? 'deal' : 'property'} record. Adjust any value to update the model.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+            <ParamInput label="Base NOI ($)" value={params.baseNOI} onChange={set('baseNOI')} />
+            <ParamInput label="Purchase Price ($)" value={params.purchasePrice} onChange={set('purchasePrice')} />
+            <ParamInput label="Loan Amount ($)" value={params.loanAmount} onChange={set('loanAmount')} />
+            <ParamInput label="Annual Debt Service ($)" value={params.annualDebtService} onChange={set('annualDebtService')} />
+            <ParamInput label="Equity Invested ($)" value={params.equityInvested} onChange={set('equityInvested')} />
+            <ParamInput label="Hold Years" value={params.holdYears} onChange={set('holdYears')} />
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Key Parameter Adjustments</CardTitle>
           <CardDescription className="text-xs">
-            Base assumptions: NOI ${(BASE_PARAMS.baseNOI / 1000).toFixed(0)}K · Purchase Price ${(BASE_PARAMS.purchasePrice / 1_000_000).toFixed(1)}M · Hold {BASE_PARAMS.holdYears}Y · Equity ${(BASE_PARAMS.equityInvested / 1_000_000).toFixed(1)}M
+            Base assumptions: NOI ${(params.baseNOI / 1000).toFixed(0)}K · Purchase Price ${(params.purchasePrice / 1_000_000).toFixed(1)}M · Hold {params.holdYears}Y · Equity ${(params.equityInvested / 1_000_000).toFixed(1)}M
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
