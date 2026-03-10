@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { useAuth } from '@/hooks/useAuth'
 import LiveRateBanner from '@/components/LiveRateBanner'
+import ChatWidget from '@/components/ChatWidget'
 
 const NAV_SECTIONS = [
   {
@@ -212,6 +213,7 @@ export default function AppShell({ children }: AppShellProps) {
           </main>
         </div>
       </div>
+      <ChatWidget />
     </TooltipProvider>
   )
 }
