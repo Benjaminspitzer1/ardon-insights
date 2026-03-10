@@ -7,13 +7,13 @@ export function useAuth() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
-      setLoading(false)
-    })
-
+    // onAuthStateChange fires with INITIAL_SESSION first — this handles both
+    // normal loads AND OAuth redirects with #access_token in the URL hash.
+    // We move setLoading(false) here so the app waits until Supabase has
+    // fully processed the URL token before deciding the user is logged out.
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session)
+      setLoading(false)
     })
 
     return () => subscription.unsubscribe()

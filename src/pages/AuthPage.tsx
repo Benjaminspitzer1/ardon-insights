@@ -18,9 +18,15 @@ export default function AuthPage() {
   const [message, setMessage] = useState<string | null>(null)
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const err = params.get('error_description')
-    if (err) setError(err.replace(/\+/g, ' '))
+    // Check query params (OAuth server errors like DB failure)
+    const qParams = new URLSearchParams(window.location.search)
+    let err = qParams.get('error_description')
+    // Check hash fragment (email confirmation errors like otp_expired)
+    if (!err && window.location.hash) {
+      const hParams = new URLSearchParams(window.location.hash.replace(/^#/, ''))
+      err = hParams.get('error_description')
+    }
+    if (err) setError(decodeURIComponent(err.replace(/\+/g, ' ')))
   }, [])
 
   if (session) return <Navigate to="/" replace />
