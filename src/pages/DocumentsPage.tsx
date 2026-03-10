@@ -1,8 +1,8 @@
-import { useRef, useState } from 'react'
+import { useRef, useState, useEffect, useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   FileText, FileSpreadsheet, Image, File, FileX, Upload, Trash2,
-  Sparkles, ArrowRight, Loader2, CheckCircle2, AlertCircle
+  Sparkles, ArrowRight, Loader2, CheckCircle2, AlertCircle, AlertTriangle
 } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useAuth } from '@/hooks/useAuth'
@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Label } from '@/components/ui/label'
+import { cn } from '@/lib/utils'
 
 function getFileType(filename: string): string {
   const ext = filename.split('.').pop()?.toLowerCase() ?? ''
@@ -87,55 +88,33 @@ export default function DocumentsPage() {
   const [extracting, setExtracting] = useState<string | null>(null)
   const [reviewDoc, setReviewDoc] = useState<any | null>(null)
 
-  const { data: documents } = useQuery({
+  const { data: documents, isLoading, error } = useQuery({
     queryKey: ['documents', user?.id],
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('documents')
         .select('*')
         .order('created_at', { ascending: false })
+      if (error) throw error
       return data ?? []
     },
     enabled: !!user,
-    refetchInterval: (data: any) => {
-      const processing = (data as any[])?.some((d: any) => d.extraction_status === 'processing')
+    refetchInterval: (query) => {
+      const docs = query.state.data as any[] | undefined
+      const processing = docs?.some((d: any) => d.extraction_status === 'processing')
       return processing ? 3000 : false
     },
   })
 
-  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? [])
-    if (!files.length || !user) return
-    setUploading(true)
-    setUploadError(null)
-    try {
-      for (const file of files) {
-        const path = `${user.id}/${Date.now()}_${file.name}`
-        const { error: storageError } = await supabase.storage.from('documents').upload(path, file)
-        if (storageError) throw storageError
-        await supabase.from('documents').insert({
-          user_id: user.id,
-          name: file.name,
-          size: file.size,
-          type: getFileType(file.name),
-          storage_path: path,
-          extraction_status: 'pending',
-        })
-      }
-      qc.invalidateQueries({ queryKey: ['documents'] })
-    } catch (err: unknown) {
-      setUploadError(err instanceof Error ? err.message : 'Upload failed')
-    } finally {
-      setUploading(false)
-      if (fileInputRef.current) fileInputRef.current.value = ''
-    }
-  }
-
-  const handleDelete = async (doc: any) => {
-    if (doc.storage_path) await supabase.storage.from('documents').remove([doc.storage_path])
-    await supabase.from('documents').delete().eq('id', doc.id)
-    qc.invalidateQueries({ queryKey: ['documents'] })
-  }
+  // Fetch user profile to check auto_extract preference
+  const { data: profile } = useQuery({
+    queryKey: ['profile', user?.id],
+    queryFn: async () => {
+      const { data } = await supabase.from('profiles').select('auto_extract').eq('id', user!.id).single()
+      return data
+    },
+    enabled: !!user,
+  })
 
   const handleExtract = async (doc: any) => {
     setExtracting(doc.id)
@@ -157,9 +136,73 @@ export default function DocumentsPage() {
     }
   }
 
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? [])
+    if (!files.length || !user) return
+    setUploading(true)
+    setUploadError(null)
+    try {
+      const uploadedDocs: any[] = []
+      for (const file of files) {
+        const path = `${user.id}/${Date.now()}_${file.name}`
+        const { error: storageError } = await supabase.storage.from('documents').upload(path, file)
+        if (storageError) throw storageError
+        const { data: inserted } = await supabase.from('documents').insert({
+          user_id: user.id,
+          name: file.name,
+          size: file.size,
+          type: getFileType(file.name),
+          storage_path: path,
+          extraction_status: 'pending',
+        }).select().single()
+        if (inserted) uploadedDocs.push(inserted)
+      }
+      qc.invalidateQueries({ queryKey: ['documents'] })
+
+      // Auto-extract if user preference is set
+      if (profile?.auto_extract) {
+        for (const doc of uploadedDocs) {
+          if (doc.type === 'PDF' || doc.type === 'Word') {
+            handleExtract(doc)
+          }
+        }
+      }
+    } catch (err: unknown) {
+      setUploadError(err instanceof Error ? err.message : 'Upload failed')
+    } finally {
+      setUploading(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
+
+  const handleDelete = async (doc: any) => {
+    if (doc.storage_path) await supabase.storage.from('documents').remove([doc.storage_path])
+    await supabase.from('documents').delete().eq('id', doc.id)
+    qc.invalidateQueries({ queryKey: ['documents'] })
+  }
+
   const allDocs = (documents ?? []).filter((d: any) =>
     !search || d.name?.toLowerCase().includes(search.toLowerCase())
   )
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <h1 className="text-2xl font-bold">Documents</h1>
+        <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
+          Failed to load documents: {(error as Error).message}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -168,10 +211,15 @@ export default function DocumentsPage() {
           <h1 className="text-2xl font-bold">Documents</h1>
           <p className="text-sm text-muted-foreground">Upload, extract, and direct data from your investment documents</p>
         </div>
-        <Button variant="brand" className="gap-2" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
-          <Upload className="h-4 w-4" />
-          {uploading ? 'Uploading...' : 'Upload Document'}
-        </Button>
+        <div className="flex items-center gap-2">
+          {profile?.auto_extract && (
+            <Badge variant="teal" className="text-[10px]">Auto-extract ON</Badge>
+          )}
+          <Button variant="brand" className="gap-2" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
+            <Upload className="h-4 w-4" />
+            {uploading ? 'Uploading...' : 'Upload Document'}
+          </Button>
+        </div>
       </div>
 
       <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleUpload} />
@@ -247,10 +295,14 @@ function ReviewDirectDialog({ doc, open, onClose }: { doc: any; open: boolean; o
   const [destination, setDestination] = useState('')
   const [applying, setApplying] = useState(false)
   const [applied, setApplied] = useState<string[]>([])
+  const [trustAI, setTrustAI] = useState(false)
+  const [currentProp, setCurrentProp] = useState<any>(null)
+  const [overrideMap, setOverrideMap] = useState<Record<string, boolean>>({})
+  const [showConflictStep, setShowConflictStep] = useState(false)
 
   const { data: properties } = useQuery({
     queryKey: ['properties-for-direct'],
-    queryFn: async () => { const { data } = await supabase.from('properties').select('id, name').order('name'); return data ?? [] },
+    queryFn: async () => { const { data } = await supabase.from('properties').select('id, name, address, purchase_price, noi, gross_rental_income, operating_expenses').order('name'); return data ?? [] },
     enabled: open,
   })
   const { data: deals } = useQuery({
@@ -259,13 +311,69 @@ function ReviewDirectDialog({ doc, open, onClose }: { doc: any; open: boolean; o
     enabled: open,
   })
 
+  // Fetch current property values when property_* destination selected
+  useEffect(() => {
+    if (!destination.startsWith('property_') || !properties?.[0]?.id) {
+      setCurrentProp(null)
+      return
+    }
+    supabase.from('properties').select('*').eq('id', properties[0].id).single()
+      .then(({ data }) => setCurrentProp(data))
+  }, [destination, properties])
+
+  // Reset state when dialog opens/closes or destination changes
+  useEffect(() => {
+    setShowConflictStep(false)
+  }, [destination, open])
+
   if (!doc) return null
   const rows = flattenExtracted(doc.extracted_data).filter(r => r.key !== 'summary')
   const extractedObj = doc.extracted_data ?? {}
 
-  const handleApply = async () => {
+  // Compute conflicts: fields where DB already has a different value
+  const conflicts = useMemo<Record<string, { extracted: string; current: string }>>(() => {
+    if (!destination.startsWith('property_') || !currentProp || !extractedObj.property) return {}
+    const result: Record<string, { extracted: string; current: string }> = {}
+    const field = destination.replace('property_', '')
+    const extracted = extractedObj.property?.[field]
+    const current = currentProp?.[field]
+    if (current != null && current !== '' && extracted != null && String(current) !== String(extracted)) {
+      result[field] = { extracted: String(extracted), current: String(current) }
+    }
+    return result
+  }, [destination, currentProp, extractedObj])
+
+  const hasConflicts = Object.keys(conflicts).length > 0
+
+  // Initialize override map when conflicts change
+  useEffect(() => {
+    const init: Record<string, boolean> = {}
+    for (const k of Object.keys(conflicts)) init[k] = true
+    setOverrideMap(init)
+  }, [conflicts])
+
+  // Build a conflict key map for left panel highlighting
+  const conflictFieldKeys = useMemo(() => {
+    const keys = new Set<string>()
+    for (const field of Object.keys(conflicts)) {
+      keys.add(`property › ${field}`)
+      keys.add(field)
+    }
+    return keys
+  }, [conflicts])
+
+  const handleApplyClick = () => {
+    if (!trustAI && hasConflicts && !showConflictStep) {
+      setShowConflictStep(true)
+      return
+    }
+    applyData()
+  }
+
+  const applyData = async () => {
     if (!destination) return
     setApplying(true)
+    setShowConflictStep(false)
     try {
       if (destination === 'rent_roll' && extractedObj.rent_roll?.length) {
         const propertyId = deals?.[0]?.property_id ?? properties?.[0]?.id
@@ -299,8 +407,12 @@ function ReviewDirectDialog({ doc, open, onClose }: { doc: any; open: boolean; o
         const field = destination.replace('property_', '')
         const propertyId = properties?.[0]?.id
         if (propertyId && extractedObj.property[field] != null) {
-          await supabase.from('properties').update({ [field]: extractedObj.property[field] }).eq('id', propertyId)
-          setApplied(p => [...p, destination])
+          // Respect override map: if there's a conflict and user unchecked it, skip
+          const shouldApply = trustAI || !conflicts[field] || overrideMap[field]
+          if (shouldApply) {
+            await supabase.from('properties').update({ [field]: extractedObj.property[field] }).eq('id', propertyId)
+            setApplied(p => [...p, destination])
+          }
         }
       }
     } finally {
@@ -316,6 +428,7 @@ function ReviewDirectDialog({ doc, open, onClose }: { doc: any; open: boolean; o
           <p className="text-sm text-muted-foreground mt-1">AI extracted the fields below. Choose where to send data in your deals or properties.</p>
         </DialogHeader>
         <div className="flex flex-1 overflow-hidden">
+          {/* Left: extracted fields */}
           <div className="w-1/2 border-r border-border overflow-y-auto p-4 space-y-2">
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Extracted Fields</p>
             {doc.extracted_data?.summary && (
@@ -324,38 +437,118 @@ function ReviewDirectDialog({ doc, open, onClose }: { doc: any; open: boolean; o
                 <p className="text-sm">{doc.extracted_data.summary}</p>
               </div>
             )}
-            {rows.map(row => (
-              <div key={row.key} className="rounded px-3 py-2 bg-secondary/30 text-sm">
-                <p className="text-[10px] text-muted-foreground uppercase tracking-wide">{row.key}</p>
-                <p className="font-medium truncate">{row.value}</p>
-              </div>
-            ))}
+            {rows.map(row => {
+              const isConflict = conflictFieldKeys.has(row.key)
+              const fieldKey = row.key.split(' › ').pop() ?? row.key
+              const conflictInfo = isConflict ? conflicts[fieldKey] : null
+              return (
+                <div key={row.key} className={cn(
+                  'rounded px-3 py-2 text-sm',
+                  isConflict ? 'bg-amber-500/10 border border-amber-500/20' : 'bg-secondary/30'
+                )}>
+                  <div className="flex items-center gap-1.5">
+                    {isConflict && <AlertTriangle className="h-3 w-3 text-amber-400 shrink-0" />}
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wide">{row.key}</p>
+                  </div>
+                  <p className="font-medium truncate">{row.value}</p>
+                  {conflictInfo && (
+                    <p className="text-[10px] text-muted-foreground mt-0.5">Current: {conflictInfo.current}</p>
+                  )}
+                </div>
+              )
+            })}
             {rows.length === 0 && <p className="text-sm text-muted-foreground py-4 text-center">No structured data extracted</p>}
           </div>
+
+          {/* Right: destination + apply */}
           <div className="w-1/2 overflow-y-auto p-4 space-y-4">
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Direct to App</p>
+
+            {/* Trust AI toggle */}
+            <div className="flex items-start justify-between rounded-lg border border-border p-3 gap-3">
+              <div>
+                <p className="text-sm font-medium">Trust AI</p>
+                <p className="text-xs text-muted-foreground">Skip conflict review and apply all extracted data</p>
+              </div>
+              <button
+                onClick={() => setTrustAI(t => !t)}
+                className={cn(
+                  'relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors',
+                  trustAI ? 'bg-brand-teal' : 'bg-secondary'
+                )}
+              >
+                <span className={cn(
+                  'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
+                  trustAI ? 'translate-x-4' : 'translate-x-0.5'
+                )} />
+              </button>
+            </div>
+
             <p className="text-sm text-muted-foreground">Choose what to do with the extracted data. Each action saves it directly into your deal or property.</p>
             <div className="space-y-2">
               <Label>Send To</Label>
-              <Select value={destination} onValueChange={setDestination}>
+              <Select value={destination} onValueChange={v => { setDestination(v); setShowConflictStep(false) }}>
                 <SelectTrigger><SelectValue placeholder="Choose a destination..." /></SelectTrigger>
                 <SelectContent>
                   {DESTINATION_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
-            {destination && (
+
+            {destination && !showConflictStep && (
               <div className="rounded-lg border border-border p-3 text-sm text-muted-foreground">
                 {destination === 'rent_roll' && <>Will bulk-insert <strong>{extractedObj.rent_roll?.length ?? 0} rent roll rows</strong> into the first matching property.</>}
                 {destination === 'debt_tranche' && <>Will add <strong>{extractedObj.debt?.length ?? 0} debt tranche(s)</strong> to the most recent deal.</>}
                 {destination.startsWith('property_') && <>Will update <strong>{destination.replace('property_', '')}</strong> on the first property.</>}
+                {hasConflicts && !trustAI && (
+                  <p className="mt-2 text-amber-400 flex items-center gap-1.5 text-xs">
+                    <AlertTriangle className="h-3 w-3" />
+                    This field already has a value. You'll be asked to confirm before overwriting.
+                  </p>
+                )}
               </div>
             )}
-            <Button variant="brand" className="w-full gap-2" onClick={handleApply} disabled={!destination || applying || applied.includes(destination)}>
+
+            {/* Conflict resolution step */}
+            {showConflictStep && (
+              <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 space-y-3">
+                <p className="text-sm font-medium text-amber-400 flex items-center gap-1.5">
+                  <AlertTriangle className="h-4 w-4" /> Conflict detected
+                </p>
+                {Object.entries(conflicts).map(([field, info]) => (
+                  <label key={field} className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={overrideMap[field] ?? true}
+                      onChange={e => setOverrideMap(m => ({ ...m, [field]: e.target.checked }))}
+                      className="mt-0.5 accent-brand-teal"
+                    />
+                    <div className="text-xs">
+                      <p className="font-medium">{field}</p>
+                      <p className="text-muted-foreground">Current: <span className="text-foreground">{info.current}</span></p>
+                      <p className="text-muted-foreground">AI extracted: <span className="text-brand-teal-light">{info.extracted}</span></p>
+                    </div>
+                  </label>
+                ))}
+                <p className="text-xs text-muted-foreground">Checked fields will be overwritten. Uncheck to keep the current value.</p>
+              </div>
+            )}
+
+            <Button
+              variant="brand" className="w-full gap-2"
+              onClick={showConflictStep ? applyData : handleApplyClick}
+              disabled={!destination || applying || applied.includes(destination)}
+            >
               {applying ? <><Loader2 className="h-4 w-4 animate-spin" />Applying...</>
                 : applied.includes(destination) ? <><CheckCircle2 className="h-4 w-4" />Applied</>
+                : showConflictStep ? 'Confirm & Apply'
                 : <><ArrowRight className="h-4 w-4" />Apply to App</>}
             </Button>
+            {showConflictStep && (
+              <Button variant="outline" size="sm" className="w-full" onClick={() => setShowConflictStep(false)}>
+                Cancel
+              </Button>
+            )}
             {applied.map(a => (
               <p key={a} className="text-xs text-emerald-400 flex items-center gap-1">
                 <CheckCircle2 className="h-3 w-3" />

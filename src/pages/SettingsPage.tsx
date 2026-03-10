@@ -46,12 +46,16 @@ function ProfileSettings() {
   const { user } = useAuth()
   const qc = useQueryClient()
   const [fullName, setFullName] = useState('')
+  const [autoExtract, setAutoExtract] = useState(false)
 
   const { data: profile } = useQuery({
     queryKey: ['profile', user?.id],
     queryFn: async () => {
       const { data } = await supabase.from('profiles').select('*').eq('id', user!.id).single()
-      if (data) setFullName(data.full_name ?? '')
+      if (data) {
+        setFullName(data.full_name ?? '')
+        setAutoExtract(data.auto_extract ?? false)
+      }
       return data
     },
     enabled: !!user,
@@ -59,7 +63,13 @@ function ProfileSettings() {
 
   const save = useMutation({
     mutationFn: async () => {
-      await supabase.from('profiles').upsert({ id: user!.id, email: user!.email!, full_name: fullName, role: profile?.role ?? 'analyst' })
+      await supabase.from('profiles').upsert({
+        id: user!.id,
+        email: user!.email!,
+        full_name: fullName,
+        role: profile?.role ?? 'analyst',
+        auto_extract: autoExtract,
+      })
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['profile'] }),
   })
@@ -87,6 +97,40 @@ function ProfileSettings() {
           </div>
         </CardContent>
       </Card>
+
+      <Separator />
+      <div>
+        <h2 className="text-lg font-semibold">Preferences</h2>
+        <p className="text-sm text-muted-foreground">Customize how the app behaves for you</p>
+      </div>
+      <Card>
+        <CardContent className="pt-6">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium">Auto-extract on upload</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Automatically run AI extraction on PDF and Word files when uploaded to Documents
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={autoExtract}
+              onClick={() => setAutoExtract(v => !v)}
+              className={cn(
+                'relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-brand-teal focus:ring-offset-2',
+                autoExtract ? 'bg-brand-teal' : 'bg-secondary border border-border'
+              )}
+            >
+              <span className={cn(
+                'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
+                autoExtract ? 'translate-x-4' : 'translate-x-0.5'
+              )} />
+            </button>
+          </div>
+        </CardContent>
+      </Card>
+
       <Button variant="brand" onClick={() => save.mutate()} disabled={save.isPending}>
         {save.isPending ? 'Saving...' : 'Save changes'}
       </Button>
