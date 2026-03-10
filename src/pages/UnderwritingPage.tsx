@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Download, CheckSquare, BarChart3, DollarSign, FileText, FileSpreadsheet, Plus, Layers, Users, Pencil, Trash2 } from 'lucide-react'
+import { ArrowLeft, Download, CheckSquare, BarChart3, DollarSign, FileText, FileSpreadsheet, Plus, Layers, Users, Pencil, Trash2, Upload } from 'lucide-react'
+import * as XLSX from 'xlsx'
 import { supabase } from '@/lib/supabaseClient'
 import { exportUWModel } from '@/lib/exportExcel'
 import { exportDealOnePager as exportPDF } from '@/lib/exportPDF'
@@ -20,6 +21,111 @@ import ProFormaTable from '@/components/ProFormaTable'
 import IRRSensitivityMatrix from '@/components/IRRSensitivityMatrix'
 import UWChecklist from '@/components/UWChecklist'
 import ScrapePanel from '@/components/ScrapePanel'
+import ImportExcelDialog from '@/components/ImportExcelDialog'
+
+const RENT_STATUSES = ['occupied', 'vacant', 'notice', 'model'] as const
+
+type RentForm = {
+  unit_number: string; unit_type: string; tenant_name: string
+  lease_start: string; lease_end: string; monthly_rent: string; sqft: string; status: string
+}
+const EMPTY_RENT: RentForm = {
+  unit_number: '', unit_type: '', tenant_name: '', lease_start: '',
+  lease_end: '', monthly_rent: '', sqft: '', status: 'occupied',
+}
+
+function RentUnitDialog({ open, onClose, propertyId, editing, onSaved }: {
+  open: boolean; onClose: () => void; propertyId: string
+  editing: (RentForm & { id?: string }) | null; onSaved: () => void
+}) {
+  const [form, setForm] = useState<RentForm>(editing ? {
+    unit_number: editing.unit_number,
+    unit_type: editing.unit_type,
+    tenant_name: editing.tenant_name ?? '',
+    lease_start: editing.lease_start ?? '',
+    lease_end: editing.lease_end ?? '',
+    monthly_rent: String(editing.monthly_rent),
+    sqft: String(editing.sqft ?? ''),
+    status: editing.status,
+  } : EMPTY_RENT)
+  const set = (k: keyof RentForm) => (v: string) => setForm(f => ({ ...f, [k]: v }))
+  const save = useMutation({
+    mutationFn: async () => {
+      const payload = {
+        property_id: propertyId,
+        unit_number: form.unit_number.trim(),
+        unit_type: form.unit_type.trim(),
+        tenant_name: form.tenant_name.trim() || null,
+        lease_start: form.lease_start || null,
+        lease_end: form.lease_end || null,
+        monthly_rent: parseFloat(form.monthly_rent) || 0,
+        sqft: parseFloat(form.sqft) || null,
+        status: form.status as typeof RENT_STATUSES[number],
+      }
+      if (editing?.id) {
+        const { error } = await supabase.from('rent_roll').update(payload).eq('id', editing.id)
+        if (error) throw error
+      } else {
+        const { error } = await supabase.from('rent_roll').insert(payload)
+        if (error) throw error
+      }
+    },
+    onSuccess: () => { onSaved(); onClose() },
+  })
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader><DialogTitle>{editing?.id ? 'Edit Unit' : 'Add Unit'}</DialogTitle></DialogHeader>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs">Unit Number *</Label>
+            <Input value={form.unit_number} onChange={e => set('unit_number')(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Unit Type</Label>
+            <Input value={form.unit_type} onChange={e => set('unit_type')(e.target.value)} placeholder="1BR, 2BR..." />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Tenant Name</Label>
+            <Input value={form.tenant_name} onChange={e => set('tenant_name')(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Monthly Rent ($)</Label>
+            <Input type="number" value={form.monthly_rent} onChange={e => set('monthly_rent')(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Lease Start</Label>
+            <Input type="date" value={form.lease_start} onChange={e => set('lease_start')(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Lease End</Label>
+            <Input type="date" value={form.lease_end} onChange={e => set('lease_end')(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Sq Ft</Label>
+            <Input type="number" value={form.sqft} onChange={e => set('sqft')(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Status</Label>
+            <Select value={form.status} onValueChange={set('status')}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {RENT_STATUSES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        {save.isError && <p className="text-sm text-destructive">{(save.error as Error).message}</p>}
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button variant="brand" onClick={() => save.mutate()} disabled={save.isPending}>
+            {save.isPending ? 'Saving...' : 'Save'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
 
 const STAGE_LABELS: Record<string, string> = {
   sourced: 'Sourced', screening: 'Screening', loi: 'LOI',
@@ -121,6 +227,15 @@ export default function UnderwritingPage() {
   const [showWaterfall, setShowWaterfall] = useState(false)
   const [waterfallForm, setWaterfallForm] = useState({ preferred_return: '', gp_promote: '', hurdle_1: '', hurdle_1_split_lp: '', hurdle_2: '', hurdle_2_split_lp: '' })
 
+  // Rent roll editing state
+  const [rentDialog, setRentDialog] = useState<{ open: boolean; editing: (RentForm & { id?: string }) | null }>({ open: false, editing: null })
+  const [importRentOpen, setImportRentOpen] = useState(false)
+  const [extractRows, setExtractRows] = useState<any[]>([])
+  const [extractLoading, setExtractLoading] = useState(false)
+  const [extractError, setExtractError] = useState<string | null>(null)
+  const [extractPreviewOpen, setExtractPreviewOpen] = useState(false)
+  const extractFileRef = useRef<HTMLInputElement>(null)
+
   const BLANK_TRANCHE = { tranche_name: '', loan_amount: '', rate: '', rate_type: 'fixed', spread: '', index: '', amortization: '30', io_period: '0', maturity_date: '' }
 
   const closeTrancheDialog = () => {
@@ -208,6 +323,57 @@ export default function UnderwritingPage() {
       setShowWaterfall(false)
     },
   })
+
+  const deleteRentUnit = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('rent_roll').delete().eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['rent-roll', deal?.property_id] }),
+  })
+
+  const confirmExtractedRows = useMutation({
+    mutationFn: async () => {
+      const rows = extractRows.map(r => ({ ...r, property_id: deal!.property_id }))
+      const { error } = await supabase.from('rent_roll').insert(rows)
+      if (error) throw error
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['rent-roll', deal?.property_id] })
+      setExtractPreviewOpen(false)
+      setExtractRows([])
+    },
+  })
+
+  function downloadRentRollTemplate() {
+    const ws = XLSX.utils.aoa_to_sheet([['Unit #', 'Type', 'Tenant Name', 'Lease Start', 'Lease End', 'Monthly Rent', 'SF', 'Status']])
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Rent Roll')
+    XLSX.writeFile(wb, 'rent_roll_template.xlsx')
+  }
+
+  async function handleExtractFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setExtractLoading(true)
+    setExtractError(null)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('type', 'rent-roll')
+      const { data, error } = await supabase.functions.invoke('extract-document', { body: formData })
+      if (error) throw new Error(error.message)
+      const rows = Array.isArray(data?.rows) ? data.rows : []
+      if (rows.length === 0) throw new Error('No rows extracted. Check the document format.')
+      setExtractRows(rows)
+      setExtractPreviewOpen(true)
+    } catch (err: unknown) {
+      setExtractError(err instanceof Error ? err.message : 'Extraction failed')
+    } finally {
+      setExtractLoading(false)
+      if (extractFileRef.current) extractFileRef.current.value = ''
+    }
+  }
 
   const advanceDeal = useMutation({
     mutationFn: async (newStage: string) => {
@@ -438,21 +604,56 @@ export default function UnderwritingPage() {
               </div>
             )}
             <Card>
+              <CardHeader className="flex flex-row items-center justify-between py-3">
+                <CardTitle className="text-base">Rent Roll ({rentRoll.length} units)</CardTitle>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" className="gap-1.5" onClick={downloadRentRollTemplate}>
+                    <Download className="h-3.5 w-3.5" /> Template
+                  </Button>
+                  <Button
+                    variant="outline" size="sm" className="gap-1.5"
+                    onClick={() => setImportRentOpen(true)}
+                    disabled={!deal?.property_id}
+                  >
+                    <FileSpreadsheet className="h-3.5 w-3.5" /> Import Excel
+                  </Button>
+                  <Button
+                    variant="outline" size="sm" className="gap-1.5"
+                    onClick={() => extractFileRef.current?.click()}
+                    disabled={extractLoading || !deal?.property_id}
+                  >
+                    <Upload className="h-3.5 w-3.5" />
+                    {extractLoading ? 'Extracting...' : 'Extract from Doc'}
+                  </Button>
+                  <Button
+                    variant="brand" size="sm" className="gap-1.5"
+                    onClick={() => setRentDialog({ open: true, editing: null })}
+                    disabled={!deal?.property_id}
+                  >
+                    <Plus className="h-3.5 w-3.5" /> Add Unit
+                  </Button>
+                </div>
+              </CardHeader>
+              {extractError && (
+                <div className="px-4 pb-2 text-sm text-destructive">{extractError}</div>
+              )}
               <CardContent className="overflow-x-auto p-0">
                 {rentRoll.length === 0 ? (
-                  <div className="py-12 text-center text-sm text-muted-foreground">No rent roll data for this property.</div>
+                  <div className="py-12 text-center text-sm text-muted-foreground">
+                    No rent roll data for this property. Add units manually, import from Excel, or extract from a document.
+                  </div>
                 ) : (
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-border">
-                        {['Unit', 'Type', 'Tenant', 'SQFT', 'Rent/SF', 'Monthly Rent', 'Lease Start', 'Lease End', 'Status'].map(h => (
+                        {['Unit', 'Type', 'Tenant', 'SQFT', 'Rent/SF', 'Monthly Rent', 'Lease Start', 'Lease End', 'Status', ''].map(h => (
                           <th key={h} className="px-3 py-3 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">{h}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
                       {rentRoll.map(unit => (
-                        <tr key={unit.id} className="border-b border-border/50 hover:bg-secondary/30">
+                        <tr key={unit.id} className="group border-b border-border/50 hover:bg-secondary/30">
                           <td className="px-3 py-2 font-medium">{unit.unit_number}</td>
                           <td className="px-3 py-2 text-muted-foreground">{unit.unit_type}</td>
                           <td className="px-3 py-2 text-muted-foreground">{unit.tenant_name ?? '—'}</td>
@@ -470,6 +671,35 @@ export default function UnderwritingPage() {
                             >
                               {unit.status}
                             </Badge>
+                          </td>
+                          <td className="px-3 py-2">
+                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <Button
+                                variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground"
+                                onClick={() => setRentDialog({
+                                  open: true,
+                                  editing: {
+                                    id: unit.id,
+                                    unit_number: unit.unit_number,
+                                    unit_type: unit.unit_type,
+                                    tenant_name: unit.tenant_name ?? '',
+                                    lease_start: unit.lease_start ?? '',
+                                    lease_end: unit.lease_end ?? '',
+                                    monthly_rent: String(unit.monthly_rent),
+                                    sqft: String(unit.sqft ?? ''),
+                                    status: unit.status,
+                                  },
+                                })}
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button
+                                variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                                onClick={() => deleteRentUnit.mutate(unit.id)}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -709,6 +939,81 @@ export default function UnderwritingPage() {
               disabled={!newTranche.tranche_name || !newTranche.loan_amount || !newTranche.rate || addTranche.isPending || updateTranche.isPending}
             >
               {(addTranche.isPending || updateTranche.isPending) ? 'Saving...' : editingTranche ? 'Save Changes' : 'Add Tranche'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Hidden file input for extract-from-doc */}
+      <input
+        ref={extractFileRef}
+        type="file"
+        accept=".pdf,.xlsx,.xls"
+        className="hidden"
+        onChange={handleExtractFile}
+      />
+
+      {/* Rent Roll Add/Edit Dialog */}
+      {rentDialog.open && deal?.property_id && (
+        <RentUnitDialog
+          key={rentDialog.editing?.id ?? 'new'}
+          open={rentDialog.open}
+          onClose={() => setRentDialog({ open: false, editing: null })}
+          propertyId={deal.property_id}
+          editing={rentDialog.editing}
+          onSaved={() => qc.invalidateQueries({ queryKey: ['rent-roll', deal.property_id] })}
+        />
+      )}
+
+      {/* Import Excel Dialog */}
+      {importRentOpen && deal?.property_id && (
+        <ImportExcelDialog
+          mode="rent-roll"
+          propertyId={deal.property_id}
+          open={importRentOpen}
+          onClose={() => setImportRentOpen(false)}
+          onSuccess={() => qc.invalidateQueries({ queryKey: ['rent-roll', deal.property_id] })}
+        />
+      )}
+
+      {/* Extract from Doc — Preview & Confirm Dialog */}
+      <Dialog open={extractPreviewOpen} onOpenChange={open => { if (!open) { setExtractPreviewOpen(false); setExtractRows([]) } }}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Review Extracted Rent Roll ({extractRows.length} units)</DialogTitle>
+          </DialogHeader>
+          <div className="overflow-x-auto rounded border border-border">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-border bg-secondary/60">
+                  {['Unit #', 'Type', 'Tenant', 'Lease Start', 'Lease End', 'Rent/mo', 'SF', 'Status'].map(h => (
+                    <th key={h} className="whitespace-nowrap px-3 py-2 text-left font-medium text-muted-foreground">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {extractRows.map((r, i) => (
+                  <tr key={i} className="border-b border-border/50">
+                    <td className="px-3 py-1.5 font-medium">{r.unit_number ?? '—'}</td>
+                    <td className="px-3 py-1.5">{r.unit_type ?? '—'}</td>
+                    <td className="px-3 py-1.5 text-muted-foreground">{r.tenant_name ?? '—'}</td>
+                    <td className="px-3 py-1.5 text-muted-foreground">{r.lease_start ?? '—'}</td>
+                    <td className="px-3 py-1.5 text-muted-foreground">{r.lease_end ?? '—'}</td>
+                    <td className="px-3 py-1.5 font-mono">{r.monthly_rent != null ? formatCurrency(r.monthly_rent) : '—'}</td>
+                    <td className="px-3 py-1.5">{r.sqft ?? '—'}</td>
+                    <td className="px-3 py-1.5">{r.status ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {confirmExtractedRows.isError && (
+            <p className="text-sm text-destructive">{(confirmExtractedRows.error as Error).message}</p>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setExtractPreviewOpen(false); setExtractRows([]) }}>Cancel</Button>
+            <Button variant="brand" onClick={() => confirmExtractedRows.mutate()} disabled={confirmExtractedRows.isPending}>
+              {confirmExtractedRows.isPending ? 'Inserting...' : `Insert ${extractRows.length} rows`}
             </Button>
           </DialogFooter>
         </DialogContent>

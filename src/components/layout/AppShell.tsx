@@ -19,6 +19,7 @@ const NAV_SECTIONS = [
     items: [
       { href: '/', icon: LayoutDashboard, label: 'Dashboard' },
       { href: '/portfolios', icon: FolderOpen, label: 'My Portfolio' },
+      { href: '/documents', icon: FileText, label: 'Documents' },
     ],
   },
   {
@@ -26,7 +27,6 @@ const NAV_SECTIONS = [
     items: [
       { href: '/properties', icon: Building2, label: 'Properties' },
       { href: '/deal-flow', icon: Briefcase, label: 'Deals' },
-      { href: '/documents', icon: FileText, label: 'Documents' },
     ],
   },
   {
