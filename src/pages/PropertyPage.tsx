@@ -1,15 +1,20 @@
 import { useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import ImportExcelDialog from '@/components/ImportExcelDialog'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, MapPin, Building2, Calendar, DollarSign, FileText, FileSpreadsheet, File, Image, Trash2, Upload, Download } from 'lucide-react'
+import EditPropertyDialog from '@/components/EditPropertyDialog'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { ArrowLeft, MapPin, Building2, Calendar, DollarSign, FileText, FileSpreadsheet, File, Image, Trash2, Upload, Download, Pencil, Plus, Check, X } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useAuth } from '@/hooks/useAuth'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { formatCurrency } from '@/lib/utils'
+import { formatCurrency, cn } from '@/lib/utils'
 import ProFormaTable from '@/components/ProFormaTable'
 import PropertyMap3D from '@/components/PropertyMap3D'
 import { buildProForma } from '@/lib/calculators'
@@ -48,6 +53,134 @@ const STAGE_VARIANTS: Record<string, string> = {
   dead: 'danger',
 }
 
+const RENT_STATUSES = ['occupied', 'vacant', 'notice', 'model'] as const
+
+const EMPTY_UNIT = { unit_type: '', units: '', sf: '', market_rent: '', in_place_rent: '' }
+
+type UnitForm = typeof EMPTY_UNIT
+type RentForm = {
+  unit_number: string
+  unit_type: string
+  tenant_name: string
+  lease_start: string
+  lease_end: string
+  monthly_rent: string
+  sqft: string
+  status: string
+}
+
+const EMPTY_RENT: RentForm = {
+  unit_number: '', unit_type: '', tenant_name: '', lease_start: '',
+  lease_end: '', monthly_rent: '', sqft: '', status: 'occupied',
+}
+
+function RentRollDialog({
+  open, onClose, propertyId, editing, onSaved,
+}: {
+  open: boolean
+  onClose: () => void
+  propertyId: string
+  editing: (RentForm & { id?: string }) | null
+  onSaved: () => void
+}) {
+  const [form, setForm] = useState<RentForm>(editing ? {
+    unit_number: editing.unit_number,
+    unit_type: editing.unit_type,
+    tenant_name: editing.tenant_name ?? '',
+    lease_start: editing.lease_start ?? '',
+    lease_end: editing.lease_end ?? '',
+    monthly_rent: String(editing.monthly_rent),
+    sqft: String(editing.sqft ?? ''),
+    status: editing.status,
+  } : EMPTY_RENT)
+
+  const set = (k: keyof RentForm) => (v: string) => setForm(f => ({ ...f, [k]: v }))
+
+  const save = useMutation({
+    mutationFn: async () => {
+      const payload = {
+        property_id: propertyId,
+        unit_number: form.unit_number.trim(),
+        unit_type: form.unit_type.trim(),
+        tenant_name: form.tenant_name.trim() || null,
+        lease_start: form.lease_start || null,
+        lease_end: form.lease_end || null,
+        monthly_rent: parseFloat(form.monthly_rent) || 0,
+        sqft: parseFloat(form.sqft) || null,
+        status: form.status as 'occupied' | 'vacant' | 'notice' | 'model',
+      }
+      if (editing?.id) {
+        const { error } = await supabase.from('rent_roll').update(payload).eq('id', editing.id)
+        if (error) throw error
+      } else {
+        const { error } = await supabase.from('rent_roll').insert(payload)
+        if (error) throw error
+      }
+    },
+    onSuccess: () => { onSaved(); onClose() },
+  })
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{editing?.id ? 'Edit Unit' : 'Add Unit'}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Unit Number *</Label>
+              <Input value={form.unit_number} onChange={e => set('unit_number')(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Unit Type</Label>
+              <Input value={form.unit_type} onChange={e => set('unit_type')(e.target.value)} placeholder="1BR, 2BR..." />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Tenant Name</Label>
+              <Input value={form.tenant_name} onChange={e => set('tenant_name')(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Monthly Rent ($)</Label>
+              <Input type="number" value={form.monthly_rent} onChange={e => set('monthly_rent')(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Lease Start</Label>
+              <Input type="date" value={form.lease_start} onChange={e => set('lease_start')(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Lease End</Label>
+              <Input type="date" value={form.lease_end} onChange={e => set('lease_end')(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Sq Ft</Label>
+              <Input type="number" value={form.sqft} onChange={e => set('sqft')(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Status</Label>
+              <Select value={form.status} onValueChange={set('status')}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {RENT_STATUSES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </div>
+        {save.isError && (
+          <p className="text-sm text-destructive">{(save.error as Error).message}</p>
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button variant="brand" onClick={() => save.mutate()} disabled={save.isPending}>
+            {save.isPending ? 'Saving...' : 'Save'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 export default function PropertyPage() {
   const { propertyId } = useParams<{ propertyId: string }>()
   const { user } = useAuth()
@@ -56,6 +189,16 @@ export default function PropertyPage() {
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [importMode, setImportMode] = useState<'rent-roll' | 'unit-mix' | null>(null)
+  const [editOpen, setEditOpen] = useState(false)
+
+  // Unit mix inline edit state
+  const [addingUnit, setAddingUnit] = useState(false)
+  const [editUnitId, setEditUnitId] = useState<string | null>(null)
+  const [unitForm, setUnitForm] = useState<UnitForm>(EMPTY_UNIT)
+
+  // Rent roll dialog state
+  const [rentDialogOpen, setRentDialogOpen] = useState(false)
+  const [editingRent, setEditingRent] = useState<(RentForm & { id?: string }) | null>(null)
 
   const { data: property } = useQuery({
     queryKey: ['property', propertyId],
@@ -101,6 +244,67 @@ export default function PropertyPage() {
     },
     enabled: !!propertyId,
   })
+
+  // Unit mix mutations
+  const upsertUnit = useMutation({
+    mutationFn: async () => {
+      const payload = {
+        property_id: propertyId!,
+        unit_type: unitForm.unit_type.trim(),
+        units: parseInt(unitForm.units) || 0,
+        sf: parseFloat(unitForm.sf) || 0,
+        market_rent: parseFloat(unitForm.market_rent) || 0,
+        in_place_rent: parseFloat(unitForm.in_place_rent) || 0,
+      }
+      if (editUnitId) {
+        const { error } = await supabase.from('unit_mix').update(payload).eq('id', editUnitId)
+        if (error) throw error
+      } else {
+        const { error } = await supabase.from('unit_mix').insert(payload)
+        if (error) throw error
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['unit-mix', propertyId] })
+      setEditUnitId(null)
+      setAddingUnit(false)
+      setUnitForm(EMPTY_UNIT)
+    },
+  })
+
+  const deleteUnit = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('unit_mix').delete().eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['unit-mix', propertyId] }),
+  })
+
+  const deleteRent = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('rent_roll').delete().eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['rent-roll', propertyId] }),
+  })
+
+  function startEditUnit(u: any) {
+    setEditUnitId(u.id)
+    setAddingUnit(false)
+    setUnitForm({
+      unit_type: u.unit_type,
+      units: String(u.units),
+      sf: String(u.sf),
+      market_rent: String(u.market_rent),
+      in_place_rent: String(u.in_place_rent),
+    })
+  }
+
+  function cancelUnitEdit() {
+    setEditUnitId(null)
+    setAddingUnit(false)
+    setUnitForm(EMPTY_UNIT)
+  }
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? [])
@@ -156,6 +360,9 @@ export default function PropertyPage() {
   const occupiedUnits = rentRoll?.filter(r => r.status === 'occupied').length ?? 0
   const occupancyRate = totalUnits > 0 ? occupiedUnits / totalUnits : 0
 
+  const setUF = (k: keyof UnitForm) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setUnitForm(f => ({ ...f, [k]: e.target.value }))
+
   return (
     <div className="space-y-6">
       <div className="flex items-start gap-4">
@@ -172,6 +379,9 @@ export default function PropertyPage() {
             {property.address}, {property.city}, {property.state} {property.zip}
           </p>
         </div>
+        <Button variant="outline" size="sm" className="gap-2 shrink-0" onClick={() => setEditOpen(true)}>
+          <Pencil className="h-4 w-4" /> Edit Property
+        </Button>
       </div>
 
       {/* Property stats */}
@@ -211,36 +421,93 @@ export default function PropertyPage() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="text-base">Unit Mix</CardTitle>
-              <Button variant="outline" size="sm" onClick={() => setImportMode('unit-mix')}>Import from Excel</Button>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => setImportMode('unit-mix')}>Import from Excel</Button>
+                <Button variant="brand" size="sm" className="gap-1" onClick={() => { setAddingUnit(true); setEditUnitId(null); setUnitForm(EMPTY_UNIT) }}>
+                  <Plus className="h-4 w-4" /> Add Row
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="p-0">
-              {!unitMix || unitMix.length === 0 ? (
-                <p className="p-6 text-sm text-muted-foreground">No unit mix data yet.</p>
-              ) : (
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-border">
-                      {['Type', 'Units', 'SF', 'Market Rent', 'In-Place Rent', 'Spread'].map(h => (
-                        <th key={h} className="px-4 py-3 text-left text-xs text-muted-foreground">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {unitMix.map((u) => (
-                      <tr key={u.id} className="border-b border-border/50 hover:bg-secondary/30">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border">
+                    {['Type', 'Units', 'SF', 'Market Rent', 'In-Place Rent', 'Spread', ''].map(h => (
+                      <th key={h} className="px-4 py-3 text-left text-xs text-muted-foreground">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {unitMix && unitMix.map((u) => (
+                    editUnitId === u.id ? (
+                      <tr key={u.id} className="border-b border-brand-teal/30 bg-brand-teal/5">
+                        <td className="px-2 py-1"><Input className="h-7 text-xs" value={unitForm.unit_type} onChange={setUF('unit_type')} placeholder="1BR" /></td>
+                        <td className="px-2 py-1"><Input className="h-7 text-xs w-20" type="number" value={unitForm.units} onChange={setUF('units')} /></td>
+                        <td className="px-2 py-1"><Input className="h-7 text-xs w-24" type="number" value={unitForm.sf} onChange={setUF('sf')} /></td>
+                        <td className="px-2 py-1"><Input className="h-7 text-xs w-28" type="number" value={unitForm.market_rent} onChange={setUF('market_rent')} /></td>
+                        <td className="px-2 py-1"><Input className="h-7 text-xs w-28" type="number" value={unitForm.in_place_rent} onChange={setUF('in_place_rent')} /></td>
+                        <td className="px-2 py-1 text-muted-foreground text-xs">auto</td>
+                        <td className="px-2 py-1">
+                          <div className="flex items-center gap-1">
+                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-brand-teal" onClick={() => upsertUnit.mutate()} disabled={upsertUnit.isPending}>
+                              <Check className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground" onClick={cancelUnitEdit}>
+                              <X className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : (
+                      <tr key={u.id} className="group border-b border-border/50 hover:bg-secondary/30">
                         <td className="px-4 py-2 font-medium">{u.unit_type}</td>
                         <td className="px-4 py-2">{u.units}</td>
                         <td className="px-4 py-2">{u.sf.toLocaleString()}</td>
                         <td className="px-4 py-2 font-mono">${u.market_rent.toLocaleString()}</td>
                         <td className="px-4 py-2 font-mono">${u.in_place_rent.toLocaleString()}</td>
-                        <td className={`px-4 py-2 font-mono ${u.market_rent > u.in_place_rent ? 'text-emerald-400' : 'text-red-400'}`}>
+                        <td className={cn('px-4 py-2 font-mono', u.market_rent > u.in_place_rent ? 'text-emerald-400' : 'text-red-400')}>
                           ${(u.market_rent - u.in_place_rent).toLocaleString()}
                         </td>
+                        <td className="px-4 py-2">
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground" onClick={() => startEditUnit(u)}>
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive" onClick={() => deleteUnit.mutate(u.id)}>
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </td>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
+                    )
+                  ))}
+                  {addingUnit && (
+                    <tr className="border-b border-brand-teal/30 bg-brand-teal/5">
+                      <td className="px-2 py-1"><Input className="h-7 text-xs" value={unitForm.unit_type} onChange={setUF('unit_type')} placeholder="1BR" /></td>
+                      <td className="px-2 py-1"><Input className="h-7 text-xs w-20" type="number" value={unitForm.units} onChange={setUF('units')} placeholder="0" /></td>
+                      <td className="px-2 py-1"><Input className="h-7 text-xs w-24" type="number" value={unitForm.sf} onChange={setUF('sf')} placeholder="0" /></td>
+                      <td className="px-2 py-1"><Input className="h-7 text-xs w-28" type="number" value={unitForm.market_rent} onChange={setUF('market_rent')} placeholder="0" /></td>
+                      <td className="px-2 py-1"><Input className="h-7 text-xs w-28" type="number" value={unitForm.in_place_rent} onChange={setUF('in_place_rent')} placeholder="0" /></td>
+                      <td className="px-2 py-1 text-muted-foreground text-xs">auto</td>
+                      <td className="px-2 py-1">
+                        <div className="flex items-center gap-1">
+                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-brand-teal" onClick={() => upsertUnit.mutate()} disabled={upsertUnit.isPending}>
+                            <Check className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground" onClick={cancelUnitEdit}>
+                            <X className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  {(!unitMix || unitMix.length === 0) && !addingUnit && (
+                    <tr>
+                      <td colSpan={7} className="px-4 py-6 text-sm text-muted-foreground">No unit mix data yet. Click Add Row to get started.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </CardContent>
           </Card>
         </TabsContent>
@@ -249,39 +516,71 @@ export default function PropertyPage() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="text-base">Rent Roll ({rentRoll?.length ?? 0} units)</CardTitle>
-              <Button variant="outline" size="sm" onClick={() => setImportMode('rent-roll')}>Import from Excel</Button>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => setImportMode('rent-roll')}>Import from Excel</Button>
+                <Button variant="brand" size="sm" className="gap-1" onClick={() => { setEditingRent(null); setRentDialogOpen(true) }}>
+                  <Plus className="h-4 w-4" /> Add Unit
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="p-0 overflow-x-auto">
-              {!rentRoll || rentRoll.length === 0 ? (
-                <p className="p-6 text-sm text-muted-foreground">No rent roll data yet.</p>
-              ) : (
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-border">
-                      {['Unit', 'Type', 'Tenant', 'Lease Start', 'Lease End', 'Rent/mo', 'Status'].map(h => (
-                        <th key={h} className="px-4 py-3 text-left text-xs text-muted-foreground">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rentRoll.map((r) => (
-                      <tr key={r.id} className="border-b border-border/50 hover:bg-secondary/30">
-                        <td className="px-4 py-2 font-medium">{r.unit_number}</td>
-                        <td className="px-4 py-2">{r.unit_type}</td>
-                        <td className="px-4 py-2 text-muted-foreground">{r.tenant_name ?? '—'}</td>
-                        <td className="px-4 py-2 text-xs">{r.lease_start ?? '—'}</td>
-                        <td className="px-4 py-2 text-xs">{r.lease_end ?? '—'}</td>
-                        <td className="px-4 py-2 font-mono">${r.monthly_rent.toLocaleString()}</td>
-                        <td className="px-4 py-2">
-                          <Badge variant={r.status === 'occupied' ? 'success' : r.status === 'vacant' ? 'danger' : 'warning'}>
-                            {r.status}
-                          </Badge>
-                        </td>
-                      </tr>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border">
+                    {['Unit', 'Type', 'Tenant', 'Lease Start', 'Lease End', 'Rent/mo', 'Status', ''].map(h => (
+                      <th key={h} className="px-4 py-3 text-left text-xs text-muted-foreground">{h}</th>
                     ))}
-                  </tbody>
-                </table>
-              )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rentRoll && rentRoll.map((r) => (
+                    <tr key={r.id} className="group border-b border-border/50 hover:bg-secondary/30">
+                      <td className="px-4 py-2 font-medium">{r.unit_number}</td>
+                      <td className="px-4 py-2">{r.unit_type}</td>
+                      <td className="px-4 py-2 text-muted-foreground">{r.tenant_name ?? '—'}</td>
+                      <td className="px-4 py-2 text-xs">{r.lease_start ?? '—'}</td>
+                      <td className="px-4 py-2 text-xs">{r.lease_end ?? '—'}</td>
+                      <td className="px-4 py-2 font-mono">${r.monthly_rent.toLocaleString()}</td>
+                      <td className="px-4 py-2">
+                        <Badge variant={r.status === 'occupied' ? 'success' : r.status === 'vacant' ? 'danger' : 'warning'}>
+                          {r.status}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-2">
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Button
+                            variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground"
+                            onClick={() => {
+                              setEditingRent({
+                                id: r.id,
+                                unit_number: r.unit_number,
+                                unit_type: r.unit_type,
+                                tenant_name: r.tenant_name ?? '',
+                                lease_start: r.lease_start ?? '',
+                                lease_end: r.lease_end ?? '',
+                                monthly_rent: String(r.monthly_rent),
+                                sqft: String(r.sqft ?? ''),
+                                status: r.status,
+                              })
+                              setRentDialogOpen(true)
+                            }}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive" onClick={() => deleteRent.mutate(r.id)}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {(!rentRoll || rentRoll.length === 0) && (
+                    <tr>
+                      <td colSpan={8} className="px-4 py-6 text-sm text-muted-foreground">No rent roll data yet. Click Add Unit to get started.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </CardContent>
           </Card>
         </TabsContent>
@@ -407,6 +706,23 @@ export default function PropertyPage() {
           <ScrapePanel propertyId={propertyId!} />
         </TabsContent>
       </Tabs>
+
+      <EditPropertyDialog
+        open={editOpen}
+        onClose={() => setEditOpen(false)}
+        property={property}
+      />
+
+      {rentDialogOpen && (
+        <RentRollDialog
+          key={editingRent?.id ?? 'new'}
+          open={rentDialogOpen}
+          onClose={() => { setRentDialogOpen(false); setEditingRent(null) }}
+          propertyId={propertyId!}
+          editing={editingRent}
+          onSaved={() => qc.invalidateQueries({ queryKey: ['rent-roll', propertyId] })}
+        />
+      )}
 
       {importMode && (
         <ImportExcelDialog
