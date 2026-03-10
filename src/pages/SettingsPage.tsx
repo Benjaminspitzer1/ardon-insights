@@ -191,16 +191,46 @@ function SecuritySettings() {
   )
 }
 
-function ComingSoon({ title }: { title: string }) {
+function NotificationsSettings() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-semibold">{title}</h2>
+        <h2 className="text-lg font-semibold">Notifications</h2>
+        <p className="text-sm text-muted-foreground">Email delivery and notification preferences</p>
       </div>
       <Separator />
       <Card>
-        <CardContent className="flex items-center justify-center py-12 text-muted-foreground">
-          Coming soon
+        <CardHeader>
+          <CardTitle className="text-base">Confirmation Emails</CardTitle>
+          <CardDescription>
+            Emails sent when users sign up, reset passwords, or confirm their account.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="rounded-md border border-border bg-muted/40 p-4 text-sm space-y-2">
+            <p>
+              <span className="font-medium">Current sender:</span>{' '}
+              <span className="text-muted-foreground">noreply@mail.supabase.io (Supabase default)</span>
+            </p>
+            <p className="text-muted-foreground">
+              To send confirmation emails from <span className="font-medium text-foreground">ARDON Insights</span> with
+              your own domain and sender name, configure a custom SMTP server in the Supabase dashboard.
+            </p>
+          </div>
+          <div className="flex items-center gap-3 pt-1">
+            <a
+              href="https://supabase.com/dashboard/project/otolaopaqpeljpfhdkhm/auth/smtp"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center justify-center rounded-md border border-border bg-secondary px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-secondary/80"
+            >
+              Configure SMTP in Supabase
+            </a>
+          </div>
+          <p className="text-xs text-muted-foreground pt-1">
+            Recommended providers: Resend, AWS SES, SendGrid, Postmark. Set the sender name to{' '}
+            <span className="font-mono">ARDON Insights</span> when configuring.
+          </p>
         </CardContent>
       </Card>
     </div>
@@ -219,7 +249,7 @@ export default function SettingsPage() {
         <div className="flex-1">
           <Routes>
             <Route index element={<ProfileSettings />} />
-            <Route path="notifications" element={<ComingSoon title="Notifications" />} />
+            <Route path="notifications" element={<NotificationsSettings />} />
             <Route path="security" element={<SecuritySettings />} />
             <Route path="integrations" element={<IntegrationsSettings />} />
           </Routes>
