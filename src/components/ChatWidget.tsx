@@ -141,7 +141,7 @@ export default function ChatWidget() {
 
       {/* Chat panel */}
       {open && (
-        <div className="fixed bottom-22 right-6 z-50 flex w-[360px] flex-col rounded-xl border border-border bg-card shadow-2xl"
+        <div className="fixed bottom-[88px] right-6 z-50 flex w-[360px] flex-col rounded-xl border border-border bg-card shadow-2xl"
           style={{ height: '520px' }}>
           {/* Header */}
           <div className="flex items-center gap-2 rounded-t-xl border-b border-border bg-brand-teal/10 px-4 py-3">
@@ -152,6 +152,7 @@ export default function ChatWidget() {
                 <p className="text-[10px] text-brand-teal-light">{contextLabel}</p>
               )}
             </div>
+            <span className="text-[10px] text-muted-foreground">Powered by Claude</span>
             <button onClick={() => setMessages([])} className="text-[10px] text-muted-foreground hover:text-foreground">
               Clear
             </button>
