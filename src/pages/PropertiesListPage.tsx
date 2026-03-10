@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { Building2, Plus } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useAuth } from '@/hooks/useAuth'
@@ -14,6 +14,8 @@ export default function PropertiesListPage() {
   const { user } = useAuth()
   const navigate = useNavigate()
   const [search, setSearch] = useState('')
+  const [searchParams] = useSearchParams()
+  const groupFilter = searchParams.get('group')
 
   const { data: properties, isLoading } = useQuery({
     queryKey: ['properties', user?.id],
@@ -28,6 +30,7 @@ export default function PropertiesListPage() {
   })
 
   const filtered = (properties ?? []).filter(p => {
+    if (groupFilter && (p as any).group_id !== groupFilter) return false
     const q = search.toLowerCase()
     return (
       !q ||
@@ -50,6 +53,13 @@ export default function PropertiesListPage() {
           New Property
         </Button>
       </div>
+
+      {groupFilter && (
+        <div className="flex items-center gap-2 rounded-md border border-border bg-secondary/50 px-3 py-2 text-sm">
+          <span className="text-muted-foreground">Showing properties in portfolio</span>
+          <Link to="/properties" className="ml-auto text-xs text-brand-teal-light hover:underline">Clear filter ×</Link>
+        </div>
+      )}
 
       <Input
         placeholder="Search by name, city, or type..."
@@ -107,12 +117,9 @@ export default function PropertiesListPage() {
                     </div>
                   </div>
                   <div className="mt-4">
-                    <Link
-                      to={`/properties/${p.id}`}
-                      className="text-sm text-brand-teal-light hover:underline"
-                    >
-                      View Details →
-                    </Link>
+                    <Button variant="outline" size="sm" className="w-full" asChild>
+                      <Link to={`/properties/${p.id}`}>View →</Link>
+                    </Button>
                   </div>
                 </CardContent>
               </Card>

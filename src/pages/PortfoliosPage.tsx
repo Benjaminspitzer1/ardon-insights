@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { FolderOpen, Plus } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { supabase } from '@/lib/supabaseClient'
 import { useAuth } from '@/hooks/useAuth'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card'
@@ -8,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { formatCurrency } from '@/lib/utils'
 
 export default function PortfoliosPage() {
   const { user } = useAuth()
@@ -28,6 +30,27 @@ export default function PortfoliosPage() {
     },
     enabled: !!user,
   })
+
+  const { data: allProperties } = useQuery({
+    queryKey: ['properties-for-groups', user?.id],
+    queryFn: async () => {
+      const { data } = await supabase.from('properties').select('id, group_id, noi')
+      return data ?? []
+    },
+    enabled: !!user,
+  })
+
+  const groupStats = useMemo(() => {
+    const map: Record<string, { count: number; noi: number }> = {}
+    for (const p of allProperties ?? []) {
+      if (!p.group_id) continue
+      const s = map[p.group_id] ?? { count: 0, noi: 0 }
+      s.count += 1
+      s.noi += (p.noi as number) ?? 0
+      map[p.group_id] = s
+    }
+    return map
+  }, [allProperties])
 
   const create = useMutation({
     mutationFn: async () => {
@@ -94,11 +117,14 @@ export default function PortfoliosPage() {
                 )}
               </CardHeader>
               <CardContent className="flex-1 space-y-1 text-sm text-muted-foreground">
-                <p>Properties: 0</p>
+                <p>Properties: {groupStats[p.id]?.count ?? 0}</p>
+                <p>Total NOI: {formatCurrency(groupStats[p.id]?.noi ?? 0)}</p>
                 <p>Created: {new Date(p.created_at).toLocaleDateString()}</p>
               </CardContent>
               <CardFooter>
-                <Button variant="outline" size="sm" className="w-full">View →</Button>
+                <Button variant="outline" size="sm" className="w-full" asChild>
+                  <Link to={`/properties?group=${p.id}`}>View Properties →</Link>
+                </Button>
               </CardFooter>
             </Card>
           ))}

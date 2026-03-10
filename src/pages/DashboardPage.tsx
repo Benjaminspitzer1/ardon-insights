@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Building2, DollarSign, TrendingUp, Star, Plus } from 'lucide-react'
+import { Building2, DollarSign, TrendingUp, Star, Plus, Upload } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
@@ -126,10 +126,36 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">My Portfolio</h1>
-        <p className="text-sm text-muted-foreground">Portfolio overview and performance analytics</p>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold">My Portfolio</h1>
+          <p className="text-sm text-muted-foreground">Portfolio overview and performance analytics</p>
+        </div>
+        <div className="flex gap-2 flex-wrap">
+          <Button variant="outline" size="sm" className="gap-1.5" asChild>
+            <Link to="/new-property"><Plus className="h-4 w-4" />Add Property</Link>
+          </Button>
+          <Button variant="outline" size="sm" className="gap-1.5" asChild>
+            <Link to="/deal-flow"><Plus className="h-4 w-4" />Add Deal</Link>
+          </Button>
+          <Button variant="outline" size="sm" className="gap-1.5" asChild>
+            <Link to="/documents"><Upload className="h-4 w-4" />Upload Document</Link>
+          </Button>
+        </div>
       </div>
+
+      {props.length === 0 && (
+        <Card className="border-dashed">
+          <CardContent className="flex flex-col items-center py-16 text-center">
+            <Building2 className="mb-4 h-14 w-14 text-muted-foreground/30" />
+            <h2 className="text-xl font-semibold">Get started with your portfolio</h2>
+            <p className="mt-1 mb-6 text-sm text-muted-foreground">Add your first property to unlock analytics and insights</p>
+            <Button variant="brand" size="lg" className="gap-2" asChild>
+              <Link to="/new-property"><Plus className="h-4 w-4" />Add Your First Property</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard title="Total Properties" value={String(props.length)} subtext="In portfolio" icon={<Building2 className="h-5 w-5" />} />
