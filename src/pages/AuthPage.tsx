@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Navigate } from 'react-router-dom'
 import { Building2, ShoppingBag } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
@@ -16,6 +16,12 @@ export default function AuthPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const err = params.get('error_description')
+    if (err) setError(err.replace(/\+/g, ' '))
+  }, [])
 
   if (session) return <Navigate to="/" replace />
 
@@ -110,9 +116,6 @@ export default function AuthPage() {
                 Amazon (coming soon)
               </Button>
 
-              <p className="text-center text-[11px] text-muted-foreground">
-                Requires Google or Microsoft to be enabled in your Supabase dashboard.
-              </p>
             </div>
 
             {/* Divider */}
