@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { useAuth } from '@/hooks/useAuth'
 import LiveRateBanner from '@/components/LiveRateBanner'
+import ChatWidget from '@/components/ChatWidget'
 
 const NAV_SECTIONS = [
   {
@@ -19,6 +20,7 @@ const NAV_SECTIONS = [
     items: [
       { href: '/', icon: LayoutDashboard, label: 'Dashboard' },
       { href: '/portfolios', icon: FolderOpen, label: 'My Portfolio' },
+      { href: '/documents', icon: FileText, label: 'Documents' },
     ],
   },
   {
@@ -26,7 +28,6 @@ const NAV_SECTIONS = [
     items: [
       { href: '/properties', icon: Building2, label: 'Properties' },
       { href: '/deal-flow', icon: Briefcase, label: 'Deals' },
-      { href: '/documents', icon: FileText, label: 'Documents' },
     ],
   },
   {
@@ -212,6 +213,7 @@ export default function AppShell({ children }: AppShellProps) {
           </main>
         </div>
       </div>
+      <ChatWidget />
     </TooltipProvider>
   )
 }
