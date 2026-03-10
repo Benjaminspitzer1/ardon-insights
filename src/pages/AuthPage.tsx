@@ -41,9 +41,13 @@ export default function AuthPage() {
       const { error } = await supabase.auth.signInWithPassword({ email, password })
       if (error) setError(error.message)
     } else {
-      const { error } = await supabase.auth.signUp({ email, password })
+      const { data, error } = await supabase.auth.signUp({ email, password })
       if (error) setError(error.message)
-      else setMessage('Check your email to confirm your account.')
+      else if (data.session) {
+        // email confirmation disabled — user is already signed in, redirect happens via useAuth
+      } else {
+        setMessage('Check your email — we sent you a confirmation link to activate your account.')
+      }
     }
     setLoading(false)
   }
