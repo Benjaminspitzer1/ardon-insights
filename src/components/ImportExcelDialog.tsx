@@ -161,7 +161,7 @@ export default function ImportExcelDialog({ mode, propertyId, open, onClose, onS
             {/* Data preview */}
             <div>
               <p className="mb-2 text-sm font-medium">
-                Preview — first {Math.min(rows.length, 5)} of {rows.length} rows
+                Preview — first {Math.min(rows.length, 10)} of {rows.length} rows
               </p>
               <div className="overflow-x-auto rounded border border-border">
                 <table className="w-full text-xs">
@@ -173,7 +173,7 @@ export default function ImportExcelDialog({ mode, propertyId, open, onClose, onS
                     </tr>
                   </thead>
                   <tbody>
-                    {rows.slice(0, 5).map((row, i) => (
+                    {rows.slice(0, 10).map((row, i) => (
                       <tr key={i} className="border-b border-border/50">
                         {headers.map((_, j) => (
                           <td key={j} className="whitespace-nowrap px-3 py-1.5">{row[j] ?? ''}</td>
