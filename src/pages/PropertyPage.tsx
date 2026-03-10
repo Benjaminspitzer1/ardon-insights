@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
+import ImportExcelDialog from '@/components/ImportExcelDialog'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, MapPin, Building2, Calendar, DollarSign, FileText, FileSpreadsheet, File, Image, Trash2, Upload, Download } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
@@ -54,6 +55,7 @@ export default function PropertyPage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
+  const [importMode, setImportMode] = useState<'rent-roll' | 'unit-mix' | null>(null)
 
   const { data: property } = useQuery({
     queryKey: ['property', propertyId],
@@ -207,7 +209,10 @@ export default function PropertyPage() {
 
         <TabsContent value="unit-mix" className="mt-4">
           <Card>
-            <CardHeader><CardTitle className="text-base">Unit Mix</CardTitle></CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle className="text-base">Unit Mix</CardTitle>
+              <Button variant="outline" size="sm" onClick={() => setImportMode('unit-mix')}>Import from Excel</Button>
+            </CardHeader>
             <CardContent className="p-0">
               {!unitMix || unitMix.length === 0 ? (
                 <p className="p-6 text-sm text-muted-foreground">No unit mix data yet.</p>
@@ -242,7 +247,10 @@ export default function PropertyPage() {
 
         <TabsContent value="rent-roll" className="mt-4">
           <Card>
-            <CardHeader><CardTitle className="text-base">Rent Roll ({rentRoll?.length ?? 0} units)</CardTitle></CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle className="text-base">Rent Roll ({rentRoll?.length ?? 0} units)</CardTitle>
+              <Button variant="outline" size="sm" onClick={() => setImportMode('rent-roll')}>Import from Excel</Button>
+            </CardHeader>
             <CardContent className="p-0 overflow-x-auto">
               {!rentRoll || rentRoll.length === 0 ? (
                 <p className="p-6 text-sm text-muted-foreground">No rent roll data yet.</p>
@@ -399,6 +407,18 @@ export default function PropertyPage() {
           <ScrapePanel propertyId={propertyId!} />
         </TabsContent>
       </Tabs>
+
+      {importMode && (
+        <ImportExcelDialog
+          mode={importMode}
+          propertyId={propertyId!}
+          open={!!importMode}
+          onClose={() => setImportMode(null)}
+          onSuccess={() => {
+            qc.invalidateQueries({ queryKey: importMode === 'unit-mix' ? ['unit-mix', propertyId] : ['rent-roll', propertyId] })
+          }}
+        />
+      )}
     </div>
   )
 }

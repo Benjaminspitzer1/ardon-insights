@@ -15,6 +15,9 @@ import NewPropertyPage from '@/pages/NewPropertyPage'
 import NewsPage from '@/pages/NewsPage'
 import DocumentsPage from '@/pages/DocumentsPage'
 import SensitivityAnalysisPage from '@/pages/SensitivityAnalysisPage'
+import CashFlowPage from '@/pages/CashFlowPage'
+import FinancingPage from '@/pages/FinancingPage'
+import OperatingExpensesPage from '@/pages/OperatingExpensesPage'
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { session, loading } = useAuth()
@@ -44,6 +47,9 @@ export default function App() {
                 <Route path="/news" element={<NewsPage />} />
                 <Route path="/documents" element={<DocumentsPage />} />
                 <Route path="/sensitivity-analysis" element={<SensitivityAnalysisPage />} />
+                <Route path="/cash-flow" element={<CashFlowPage />} />
+                <Route path="/financing" element={<FinancingPage />} />
+                <Route path="/operating-expenses" element={<OperatingExpensesPage />} />
                 <Route path="/deal-inbox" element={<DealInboxPage />} />
                 <Route path="/settings/*" element={<SettingsPage />} />
                 <Route path="*" element={<Navigate to="/" replace />} />

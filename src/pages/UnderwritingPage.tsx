@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Download, CheckSquare, BarChart3, DollarSign, FileText, FileSpreadsheet, Plus, Layers, Users } from 'lucide-react'
+import { ArrowLeft, Download, CheckSquare, BarChart3, DollarSign, FileText, FileSpreadsheet, Plus, Layers, Users, Pencil, Trash2 } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { exportUWModel } from '@/lib/exportExcel'
 import { exportDealOnePager as exportPDF } from '@/lib/exportPDF'
@@ -116,7 +116,34 @@ export default function UnderwritingPage() {
   })
 
   const [showAddTranche, setShowAddTranche] = useState(false)
+  const [editingTranche, setEditingTranche] = useState<any>(null)
   const [newTranche, setNewTranche] = useState({ tranche_name: '', loan_amount: '', rate: '', rate_type: 'fixed', spread: '', index: '', amortization: '30', io_period: '0', maturity_date: '' })
+  const [showWaterfall, setShowWaterfall] = useState(false)
+  const [waterfallForm, setWaterfallForm] = useState({ preferred_return: '', gp_promote: '', hurdle_1: '', hurdle_1_split_lp: '', hurdle_2: '', hurdle_2_split_lp: '' })
+
+  const BLANK_TRANCHE = { tranche_name: '', loan_amount: '', rate: '', rate_type: 'fixed', spread: '', index: '', amortization: '30', io_period: '0', maturity_date: '' }
+
+  const closeTrancheDialog = () => {
+    setShowAddTranche(false)
+    setEditingTranche(null)
+    setNewTranche(BLANK_TRANCHE)
+  }
+
+  const openEditTranche = (t: any) => {
+    setEditingTranche(t)
+    setNewTranche({
+      tranche_name: t.tranche_name,
+      loan_amount: String(t.loan_amount),
+      rate: String(t.rate * 100),
+      rate_type: t.rate_type,
+      spread: t.spread ? String(t.spread * 10000) : '',
+      index: t.index ?? '',
+      amortization: String(t.amortization),
+      io_period: String(t.io_period),
+      maturity_date: t.maturity_date ?? '',
+    })
+    setShowAddTranche(true)
+  }
 
   const addTranche = useMutation({
     mutationFn: async () => {
@@ -135,8 +162,50 @@ export default function UnderwritingPage() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['debt-tranches', deal?.property_id] })
-      setShowAddTranche(false)
-      setNewTranche({ tranche_name: '', loan_amount: '', rate: '', rate_type: 'fixed', spread: '', index: '', amortization: '30', io_period: '0', maturity_date: '' })
+      closeTrancheDialog()
+    },
+  })
+
+  const updateTranche = useMutation({
+    mutationFn: async () => {
+      await supabase.from('debt_tranches').update({
+        tranche_name: newTranche.tranche_name,
+        loan_amount: Number(newTranche.loan_amount),
+        rate: Number(newTranche.rate) / 100,
+        rate_type: newTranche.rate_type as 'fixed' | 'floating',
+        spread: newTranche.spread ? Number(newTranche.spread) / 10000 : null,
+        index: newTranche.index || null,
+        amortization: Number(newTranche.amortization),
+        io_period: Number(newTranche.io_period),
+        maturity_date: newTranche.maturity_date || null,
+      }).eq('id', editingTranche!.id)
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['debt-tranches', deal?.property_id] })
+      closeTrancheDialog()
+    },
+  })
+
+  const deleteTranche = async (id: string) => {
+    await supabase.from('debt_tranches').delete().eq('id', id)
+    qc.invalidateQueries({ queryKey: ['debt-tranches', deal?.property_id] })
+  }
+
+  const upsertWaterfall = useMutation({
+    mutationFn: async () => {
+      await supabase.from('waterfall_structure').upsert({
+        property_id: deal!.property_id,
+        preferred_return: Number(waterfallForm.preferred_return) / 100,
+        gp_promote: Number(waterfallForm.gp_promote) / 100,
+        hurdle_1: Number(waterfallForm.hurdle_1) / 100,
+        hurdle_1_split_lp: Number(waterfallForm.hurdle_1_split_lp) / 100,
+        hurdle_2: waterfallForm.hurdle_2 ? Number(waterfallForm.hurdle_2) / 100 : null,
+        hurdle_2_split_lp: waterfallForm.hurdle_2_split_lp ? Number(waterfallForm.hurdle_2_split_lp) / 100 : null,
+      })
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['waterfall', deal?.property_id] })
+      setShowWaterfall(false)
     },
   })
 
@@ -432,7 +501,7 @@ export default function UnderwritingPage() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-border">
-                        {['Tranche', 'Amount', 'Rate', 'Type', 'Amort', 'I/O', 'Maturity'].map(h => (
+                        {['Tranche', 'Amount', 'Rate', 'Type', 'Amort', 'I/O', 'Maturity', ''].map(h => (
                           <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground whitespace-nowrap">{h}</th>
                         ))}
                       </tr>
@@ -453,6 +522,16 @@ export default function UnderwritingPage() {
                           <td className="px-4 py-2 text-xs text-muted-foreground">{t.amortization}yr</td>
                           <td className="px-4 py-2 text-xs text-muted-foreground">{t.io_period}yr</td>
                           <td className="px-4 py-2 text-xs text-muted-foreground">{t.maturity_date ?? '—'}</td>
+                          <td className="px-4 py-2">
+                            <div className="flex gap-1">
+                              <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground" onClick={() => openEditTranche(t)}>
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive" onClick={() => deleteTranche(t.id)}>
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -463,7 +542,24 @@ export default function UnderwritingPage() {
 
             {/* Waterfall Structure */}
             <Card>
-              <CardHeader><CardTitle className="text-base">Waterfall Structure</CardTitle></CardHeader>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-base">Waterfall Structure</CardTitle>
+                  <Button variant="outline" size="sm" onClick={() => {
+                    setWaterfallForm({
+                      preferred_return: waterfall ? String(waterfall.preferred_return * 100) : '',
+                      gp_promote: waterfall ? String(waterfall.gp_promote * 100) : '',
+                      hurdle_1: waterfall ? String(waterfall.hurdle_1 * 100) : '',
+                      hurdle_1_split_lp: waterfall ? String(waterfall.hurdle_1_split_lp * 100) : '',
+                      hurdle_2: waterfall?.hurdle_2 ? String(waterfall.hurdle_2 * 100) : '',
+                      hurdle_2_split_lp: waterfall?.hurdle_2_split_lp ? String(waterfall.hurdle_2_split_lp * 100) : '',
+                    })
+                    setShowWaterfall(true)
+                  }}>
+                    {waterfall ? 'Edit Waterfall' : 'Set Up Waterfall'}
+                  </Button>
+                </div>
+              </CardHeader>
               <CardContent>
                 {waterfall ? (
                   <>
@@ -552,9 +648,9 @@ export default function UnderwritingPage() {
       </Tabs>
 
       {/* Add Tranche Dialog */}
-      <Dialog open={showAddTranche} onOpenChange={setShowAddTranche}>
+      <Dialog open={showAddTranche} onOpenChange={closeTrancheDialog}>
         <DialogContent className="sm:max-w-md">
-          <DialogHeader><DialogTitle>Add Debt Tranche</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{editingTranche ? 'Edit Debt Tranche' : 'Add Debt Tranche'}</DialogTitle></DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
               <Label>Tranche Name</Label>
@@ -606,13 +702,62 @@ export default function UnderwritingPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAddTranche(false)}>Cancel</Button>
+            <Button variant="outline" onClick={closeTrancheDialog}>Cancel</Button>
             <Button
               variant="brand"
-              onClick={() => addTranche.mutate()}
-              disabled={!newTranche.tranche_name || !newTranche.loan_amount || !newTranche.rate || addTranche.isPending}
+              onClick={() => editingTranche ? updateTranche.mutate() : addTranche.mutate()}
+              disabled={!newTranche.tranche_name || !newTranche.loan_amount || !newTranche.rate || addTranche.isPending || updateTranche.isPending}
             >
-              {addTranche.isPending ? 'Saving...' : 'Add Tranche'}
+              {(addTranche.isPending || updateTranche.isPending) ? 'Saving...' : editingTranche ? 'Save Changes' : 'Add Tranche'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Waterfall Dialog */}
+      <Dialog open={showWaterfall} onOpenChange={setShowWaterfall}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>{waterfall ? 'Edit Waterfall Structure' : 'Set Up Waterfall Structure'}</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>Preferred Return (%)</Label>
+                <Input type="number" step="0.1" placeholder="8.0" value={waterfallForm.preferred_return} onChange={e => setWaterfallForm(p => ({ ...p, preferred_return: e.target.value }))} />
+              </div>
+              <div className="space-y-2">
+                <Label>GP Promote (%)</Label>
+                <Input type="number" step="0.1" placeholder="20.0" value={waterfallForm.gp_promote} onChange={e => setWaterfallForm(p => ({ ...p, gp_promote: e.target.value }))} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>Hurdle 1 (%)</Label>
+                <Input type="number" step="0.1" placeholder="10.0" value={waterfallForm.hurdle_1} onChange={e => setWaterfallForm(p => ({ ...p, hurdle_1: e.target.value }))} />
+              </div>
+              <div className="space-y-2">
+                <Label>Hurdle 1 LP Split (%)</Label>
+                <Input type="number" step="0.1" placeholder="80.0" value={waterfallForm.hurdle_1_split_lp} onChange={e => setWaterfallForm(p => ({ ...p, hurdle_1_split_lp: e.target.value }))} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>Hurdle 2 (%) <span className="text-xs text-muted-foreground">(optional)</span></Label>
+                <Input type="number" step="0.1" placeholder="15.0" value={waterfallForm.hurdle_2} onChange={e => setWaterfallForm(p => ({ ...p, hurdle_2: e.target.value }))} />
+              </div>
+              <div className="space-y-2">
+                <Label>Hurdle 2 LP Split (%) <span className="text-xs text-muted-foreground">(optional)</span></Label>
+                <Input type="number" step="0.1" placeholder="70.0" value={waterfallForm.hurdle_2_split_lp} onChange={e => setWaterfallForm(p => ({ ...p, hurdle_2_split_lp: e.target.value }))} />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowWaterfall(false)}>Cancel</Button>
+            <Button
+              variant="brand"
+              onClick={() => upsertWaterfall.mutate()}
+              disabled={!waterfallForm.preferred_return || !waterfallForm.gp_promote || !waterfallForm.hurdle_1 || !waterfallForm.hurdle_1_split_lp || upsertWaterfall.isPending}
+            >
+              {upsertWaterfall.isPending ? 'Saving...' : 'Save Waterfall'}
             </Button>
           </DialogFooter>
         </DialogContent>

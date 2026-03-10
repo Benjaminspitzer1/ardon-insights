@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import {
-  LayoutDashboard, Briefcase, FileText, BarChart3, Mail, Settings,
+  LayoutDashboard, Briefcase, FileText, BarChart3, Settings,
   ChevronLeft, ChevronRight, LogOut, User, Building2,
-  FolderOpen, Newspaper, TrendingUp, Moon, Sun
+  Newspaper, TrendingUp, Moon, Sun, DollarSign, Landmark, Receipt,
+  FolderOpen, Inbox
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { supabase } from '@/lib/supabaseClient'
@@ -12,17 +13,45 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { useAuth } from '@/hooks/useAuth'
 import LiveRateBanner from '@/components/LiveRateBanner'
 
-const NAV_ITEMS = [
-  { href: '/', icon: LayoutDashboard, label: 'My Portfolio' },
-  { href: '/portfolios', icon: FolderOpen, label: 'Portfolios' },
-  { href: '/properties', icon: Building2, label: 'Properties' },
-  { href: '/deal-flow', icon: Briefcase, label: 'Deals' },
-  { href: '/market-research', icon: BarChart3, label: 'Market Data' },
-  { href: '/news', icon: Newspaper, label: 'News' },
-  { href: '/documents', icon: FileText, label: 'Documents' },
-  { href: '/sensitivity-analysis', icon: TrendingUp, label: 'Sensitivity' },
-  { href: '/deal-inbox', icon: Mail, label: 'Deal Inbox' },
-  { href: '/settings', icon: Settings, label: 'Settings' },
+const NAV_SECTIONS = [
+  {
+    label: 'Overview',
+    items: [
+      { href: '/', icon: LayoutDashboard, label: 'Dashboard' },
+      { href: '/portfolios', icon: FolderOpen, label: 'My Portfolio' },
+    ],
+  },
+  {
+    label: 'Properties',
+    items: [
+      { href: '/properties', icon: Building2, label: 'Properties' },
+      { href: '/deal-flow', icon: Briefcase, label: 'Deals' },
+      { href: '/documents', icon: FileText, label: 'Documents' },
+    ],
+  },
+  {
+    label: 'Analysis',
+    items: [
+      { href: '/cash-flow', icon: DollarSign, label: 'Cash Flow' },
+      { href: '/financing', icon: Landmark, label: 'Financing' },
+      { href: '/operating-expenses', icon: Receipt, label: 'Operating Expenses' },
+      { href: '/sensitivity-analysis', icon: TrendingUp, label: 'Sensitivity' },
+    ],
+  },
+  {
+    label: 'Market',
+    items: [
+      { href: '/market-research', icon: BarChart3, label: 'Market Data' },
+      { href: '/news', icon: Newspaper, label: 'News' },
+    ],
+  },
+  {
+    label: 'Other',
+    items: [
+      { href: '/deal-inbox', icon: Inbox, label: 'Deal Inbox' },
+      { href: '/settings', icon: Settings, label: 'Settings' },
+    ],
+  },
 ]
 
 interface AppShellProps {
@@ -54,6 +83,11 @@ export default function AppShell({ children }: AppShellProps) {
 
   const avatarLetter = user?.email?.[0]?.toUpperCase() ?? ''
 
+  function isActive(href: string) {
+    if (href === '/') return location.pathname === '/'
+    return location.pathname.startsWith(href)
+  }
+
   return (
     <TooltipProvider delayDuration={0}>
       <div className="flex h-screen overflow-hidden bg-background">
@@ -78,30 +112,42 @@ export default function AppShell({ children }: AppShellProps) {
           </div>
 
           {/* Navigation */}
-          <nav className="flex-1 space-y-1 overflow-y-auto p-2">
-            {NAV_ITEMS.map(({ href, icon: Icon, label }) => {
-              const active = location.pathname === href || (href !== '/' && location.pathname.startsWith(href))
-              return (
-                <Tooltip key={href}>
-                  <TooltipTrigger asChild>
-                    <Link
-                      to={href}
-                      className={cn(
-                        'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                        active
-                          ? 'bg-brand-teal/15 text-brand-teal-light'
-                          : 'text-muted-foreground hover:bg-secondary hover:text-foreground',
-                        collapsed && 'justify-center px-0'
-                      )}
-                    >
-                      <Icon className="h-5 w-5 shrink-0" />
-                      {!collapsed && label}
-                    </Link>
-                  </TooltipTrigger>
-                  {collapsed && <TooltipContent side="right">{label}</TooltipContent>}
-                </Tooltip>
-              )
-            })}
+          <nav className="flex-1 overflow-y-auto p-2 space-y-4">
+            {NAV_SECTIONS.map(section => (
+              <div key={section.label}>
+                {/* Section header — only show when expanded */}
+                {!collapsed && (
+                  <p className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/60">
+                    {section.label}
+                  </p>
+                )}
+                <div className="space-y-0.5">
+                  {section.items.map(({ href, icon: Icon, label }) => {
+                    const active = isActive(href)
+                    return (
+                      <Tooltip key={href}>
+                        <TooltipTrigger asChild>
+                          <Link
+                            to={href}
+                            className={cn(
+                              'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                              active
+                                ? 'bg-brand-teal/15 text-brand-teal-light'
+                                : 'text-muted-foreground hover:bg-secondary hover:text-foreground',
+                              collapsed && 'justify-center px-0'
+                            )}
+                          >
+                            <Icon className="h-4 w-4 shrink-0" />
+                            {!collapsed && label}
+                          </Link>
+                        </TooltipTrigger>
+                        {collapsed && <TooltipContent side="right">{label}</TooltipContent>}
+                      </Tooltip>
+                    )
+                  })}
+                </div>
+              </div>
+            ))}
           </nav>
 
           {/* User + collapse */}
