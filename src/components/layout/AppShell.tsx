@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Briefcase, FileText, BarChart3, Settings,
-  ChevronLeft, ChevronRight, LogOut, User, Building2,
+  ChevronLeft, ChevronRight, LogOut, User,
   Newspaper, TrendingUp, Moon, Sun, DollarSign, Landmark, Receipt,
   FolderOpen, Inbox
 } from 'lucide-react'
@@ -36,7 +36,6 @@ const NAV_SECTIONS = [
       { href: '/cash-flow', icon: DollarSign, label: 'Cash Flow' },
       { href: '/financing', icon: Landmark, label: 'Financing' },
       { href: '/operating-expenses', icon: Receipt, label: 'Operating Expenses' },
-      { href: '/sensitivity-analysis', icon: TrendingUp, label: 'Sensitivity' },
     ],
   },
   {
@@ -62,8 +61,8 @@ interface AppShellProps {
 export default function AppShell({ children }: AppShellProps) {
   const [collapsed, setCollapsed] = useState(false)
   const [dark, setDark] = useState(() => {
-    if (typeof window === 'undefined') return true
-    return localStorage.getItem('theme') !== 'light'
+    if (typeof window === 'undefined') return false
+    return localStorage.getItem('theme') === 'dark'
   })
   const location = useLocation()
   const { user } = useAuth()
@@ -102,12 +101,15 @@ export default function AppShell({ children }: AppShellProps) {
           {/* Logo */}
           <div className={cn('flex h-16 items-center border-b border-border px-4', collapsed ? 'justify-center' : 'gap-3')}>
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-teal">
-              <Building2 className="h-5 w-5 text-white" />
+              <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" className="h-5 w-5">
+                <path d="M10 3L17 16H12.5L10 11L7.5 16H3L10 3Z" fill="white" opacity="0.9"/>
+                <path d="M7 13H13" stroke="white" strokeWidth="1.5" strokeLinecap="round"/>
+              </svg>
             </div>
             {!collapsed && (
               <div>
-                <p className="text-sm font-bold tracking-wide text-foreground">ARDON</p>
-                <p className="text-[10px] text-muted-foreground uppercase tracking-widest">Insights</p>
+                <p className="text-sm font-bold tracking-widest text-foreground">ARDON</p>
+                <p className="text-[9px] text-muted-foreground uppercase tracking-widest">Insights</p>
               </div>
             )}
           </div>

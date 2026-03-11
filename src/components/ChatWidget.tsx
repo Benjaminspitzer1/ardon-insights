@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useLocation, useParams } from 'react-router-dom'
-import { MessageCircle, X, Send, Loader2, Bot } from 'lucide-react'
+import { MessageCircle, X, Send, Loader2, Bot, Maximize2, Minimize2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/hooks/useAuth'
@@ -28,6 +28,7 @@ const STARTERS = [
 
 export default function ChatWidget() {
   const [open, setOpen] = useState(false)
+  const [expanded, setExpanded] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
@@ -141,8 +142,15 @@ export default function ChatWidget() {
 
       {/* Chat panel */}
       {open && (
-        <div className="fixed bottom-[88px] right-6 z-50 flex w-[360px] flex-col rounded-xl border border-border bg-card shadow-2xl"
-          style={{ height: '520px' }}>
+        <div
+          className="fixed z-50 flex flex-col rounded-xl border border-border bg-card shadow-2xl transition-all duration-200"
+          style={{
+            bottom: '88px',
+            right: '24px',
+            width: expanded ? '720px' : '360px',
+            height: expanded ? '80vh' : '520px',
+          }}
+        >
           {/* Header */}
           <div className="flex items-center gap-2 rounded-t-xl border-b border-border bg-brand-teal/10 px-4 py-3">
             <Bot className="h-4 w-4 text-brand-teal-light" />
@@ -155,6 +163,16 @@ export default function ChatWidget() {
             <span className="text-[10px] text-muted-foreground">Powered by Claude</span>
             <button onClick={() => setMessages([])} className="text-[10px] text-muted-foreground hover:text-foreground">
               Clear
+            </button>
+            <button
+              onClick={() => setExpanded(e => !e)}
+              className="ml-1 text-muted-foreground hover:text-foreground"
+              aria-label={expanded ? 'Minimize chat' : 'Expand chat'}
+            >
+              {expanded
+                ? <Minimize2 className="h-3.5 w-3.5" />
+                : <Maximize2 className="h-3.5 w-3.5" />
+              }
             </button>
           </div>
 
