@@ -341,6 +341,111 @@ export async function exportPortfolioSummary(properties: PortfolioProperty[]): P
   downloadBlob(buffer, `ARDON_Portfolio_${new Date().toISOString().slice(0, 10)}.xlsx`, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 }
 
+// ─── Workbook 4: Unit Mix Template ──────────────────────────────────────────
+
+export async function downloadUnitMixTemplate(): Promise<void> {
+  const wb = new ExcelJS.Workbook()
+  wb.creator = 'ARDON Insights'
+  const sheet = wb.addWorksheet('Unit Mix')
+  const COLS = ['Unit Type', 'Count', 'SF', 'Market Rent', 'Concession', 'Notes']
+  COLS.forEach((col, i) => {
+    sheet.getColumn(i + 1).width = [14, 10, 10, 14, 14, 28][i]
+    const cell = sheet.getCell(1, i + 1)
+    cell.value = col
+    applyHeaderStyle(cell)
+  })
+  sheet.getRow(1).height = 25
+  const ex = sheet.getRow(2)
+  ex.getCell(1).value = '1BR/1BA'
+  ex.getCell(2).value = 10
+  ex.getCell(3).value = 750
+  ex.getCell(4).value = 1500
+  ex.getCell(5).value = 0
+  ex.getCell(6).value = 'Example row — delete before importing'
+  for (let c = 1; c <= 6; c++) {
+    ex.getCell(c).font = { italic: true, color: { argb: 'FF888888' }, size: 10 }
+  }
+  const buffer = await wb.xlsx.writeBuffer()
+  downloadBlob(buffer, 'Unit_Mix_Template.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+}
+
+// ─── Workbook 5: Rent Roll Template ─────────────────────────────────────────
+
+export async function downloadRentRollTemplate(): Promise<void> {
+  const wb = new ExcelJS.Workbook()
+  wb.creator = 'ARDON Insights'
+  const sheet = wb.addWorksheet('Rent Roll')
+  const COLS = ['Unit #', 'Unit Type', 'Tenant Name', 'Lease Start', 'Lease End', 'Monthly Rent', 'SF', 'Status']
+  COLS.forEach((col, i) => {
+    sheet.getColumn(i + 1).width = [10, 12, 22, 14, 14, 16, 10, 12][i]
+    const cell = sheet.getCell(1, i + 1)
+    cell.value = col
+    applyHeaderStyle(cell)
+  })
+  sheet.getRow(1).height = 25
+  const ex = sheet.getRow(2)
+  ex.getCell(1).value = '101'
+  ex.getCell(2).value = '1BR'
+  ex.getCell(3).value = 'Jane Smith'
+  ex.getCell(4).value = '2025-01-01'
+  ex.getCell(5).value = '2025-12-31'
+  ex.getCell(6).value = 1500
+  ex.getCell(6).numFmt = '$#,##0'
+  ex.getCell(7).value = 750
+  ex.getCell(8).value = 'occupied'
+  for (let c = 1; c <= 8; c++) {
+    ex.getCell(c).font = { italic: true, color: { argb: 'FF888888' }, size: 10 }
+  }
+  const buffer = await wb.xlsx.writeBuffer()
+  downloadBlob(buffer, 'Rent_Roll_Template.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+}
+
+// ─── Workbook 6: Pro Forma Export ────────────────────────────────────────────
+
+export async function exportProFormaTable(propertyName: string, rows: ProFormaYear[]): Promise<void> {
+  const wb = new ExcelJS.Workbook()
+  wb.creator = 'ARDON Insights'
+  const sheet = wb.addWorksheet('Pro Forma')
+  const pfCols = ['Line Item', ...rows.map(y => `Year ${y.year}`)]
+  pfCols.forEach((col, i) => {
+    sheet.getColumn(i + 1).width = i === 0 ? 28 : 14
+    const cell = sheet.getCell(1, i + 1)
+    cell.value = col
+    applyHeaderStyle(cell, i === 0)
+  })
+  sheet.getRow(1).height = 25
+
+  interface PFRow { label: string; key: keyof ProFormaYear; highlight: boolean; negative?: boolean }
+  const pfRows: PFRow[] = [
+    { label: 'Gross Potential Income', key: 'gpi', highlight: false },
+    { label: 'Vacancy Loss', key: 'vacancyLoss', highlight: false, negative: true },
+    { label: 'Effective Gross Income', key: 'egi', highlight: true },
+    { label: 'Operating Expenses', key: 'operatingExpenses', highlight: false, negative: true },
+    { label: 'Net Operating Income', key: 'noi', highlight: true },
+    { label: 'Debt Service', key: 'debtService', highlight: false, negative: true },
+    { label: 'Cash Flow Before Tax', key: 'cashFlow', highlight: true },
+  ]
+  pfRows.forEach(({ label, key, highlight, negative }, ri) => {
+    const row = sheet.getRow(ri + 2)
+    row.getCell(1).value = label
+    applyRowStyle(row.getCell(1), highlight)
+    rows.forEach((y, ci) => {
+      const val = (y[key] as number) ?? 0
+      const cell = row.getCell(ci + 2)
+      cell.value = negative ? -Math.abs(val) : val
+      cell.numFmt = '$#,##0'
+      applyRowStyle(cell, highlight, true)
+      if (key === 'cashFlow') {
+        cell.font = { bold: true, color: { argb: val >= 0 ? `FF${GREEN}` : `FF${RED}` } }
+      }
+    })
+    row.height = 20
+  })
+  sheet.views = [{ state: 'frozen', xSplit: 1, ySplit: 1 }]
+  const buffer = await wb.xlsx.writeBuffer()
+  downloadBlob(buffer, `${sanitize(propertyName)}_Pro_Forma.xlsx`, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function downloadBlob(data: ExcelJS.Buffer, filename: string, mimeType: string) {

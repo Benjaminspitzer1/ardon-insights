@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Briefcase, FileText, BarChart3, Settings,
   ChevronLeft, ChevronRight, LogOut, User,
   Newspaper, TrendingUp, Moon, Sun, DollarSign, Landmark, Receipt,
-  FolderOpen, Inbox
+  FolderOpen, Inbox, Building2
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { supabase } from '@/lib/supabaseClient'

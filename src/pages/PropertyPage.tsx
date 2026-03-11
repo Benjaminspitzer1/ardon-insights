@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import ImportExcelDialog from '@/components/ImportExcelDialog'
 import EditPropertyDialog from '@/components/EditPropertyDialog'
@@ -18,6 +18,7 @@ import { formatCurrency, cn } from '@/lib/utils'
 import ProFormaTable from '@/components/ProFormaTable'
 import PropertyMap3D from '@/components/PropertyMap3D'
 import { buildProForma } from '@/lib/calculators'
+import { downloadUnitMixTemplate, downloadRentRollTemplate, exportProFormaTable } from '@/lib/exportExcel'
 import ScrapePanel from '@/components/ScrapePanel'
 
 function getFileType(filename: string): string {
@@ -54,6 +55,43 @@ const STAGE_VARIANTS: Record<string, string> = {
 }
 
 const RENT_STATUSES = ['occupied', 'vacant', 'notice', 'model'] as const
+
+const DEFAULT_ASSUMPTIONS = {
+  revenueGrowth: 0.03,
+  expenseGrowth: 0.025,
+  vacancyRate: 0.05,
+  exitCapRate: 0.055,
+  holdYears: 5,
+  initialNOI: null as number | null,
+  basePeriod: 't12' as 't12' | 't6' | 't3' | 'property',
+  preset: 'base' as 'conservative' | 'base' | 'optimistic',
+}
+type Assumptions = typeof DEFAULT_ASSUMPTIONS
+
+type HistPeriod = {
+  gpi: number; vacancy_pct: number; other_income: number
+  mgmt: number; insurance: number; taxes: number
+  maintenance: number; utilities: number; other_opex: number
+}
+type HistData = { t12: HistPeriod; t6: HistPeriod; t3: HistPeriod }
+
+const EMPTY_PERIOD: HistPeriod = { gpi: 0, vacancy_pct: 5, other_income: 0, mgmt: 0, insurance: 0, taxes: 0, maintenance: 0, utilities: 0, other_opex: 0 }
+const EMPTY_HIST: HistData = { t12: { ...EMPTY_PERIOD }, t6: { ...EMPTY_PERIOD }, t3: { ...EMPTY_PERIOD } }
+const PERIOD_MONTHS = { t12: 12, t6: 6, t3: 3 } as const
+const UW_PRESETS = {
+  conservative: { holdYears: 5, exitCapRate: 0.065, revenueGrowth: 0.02, expenseGrowth: 0.03, vacancyRate: 0.08 },
+  base: { holdYears: 5, exitCapRate: 0.055, revenueGrowth: 0.03, expenseGrowth: 0.025, vacancyRate: 0.05 },
+  optimistic: { holdYears: 7, exitCapRate: 0.05, revenueGrowth: 0.04, expenseGrowth: 0.02, vacancyRate: 0.03 },
+} as const
+
+function annualizeHist(period: HistPeriod, months: number): { gpi: number; egi: number; opex: number; noi: number } {
+  const factor = 12 / months
+  const annGPI = period.gpi * factor
+  const vacLoss = annGPI * (period.vacancy_pct / 100)
+  const egi = annGPI - vacLoss + period.other_income * factor
+  const opex = (period.mgmt + period.insurance + period.taxes + period.maintenance + period.utilities + period.other_opex) * factor
+  return { gpi: annGPI, egi, opex, noi: egi - opex }
+}
 
 const EMPTY_UNIT = { unit_type: '', units: '', sf: '', market_rent: '', in_place_rent: '' }
 
@@ -200,6 +238,15 @@ export default function PropertyPage() {
   const [rentDialogOpen, setRentDialogOpen] = useState(false)
   const [editingRent, setEditingRent] = useState<(RentForm & { id?: string }) | null>(null)
 
+  // Pro forma assumptions state
+  const [assumptions, setAssumptions] = useState<Assumptions>(DEFAULT_ASSUMPTIONS)
+  const [assumptionsOpen, setAssumptionsOpen] = useState(false)
+  const [assumptionsForm, setAssumptionsForm] = useState<Assumptions>(DEFAULT_ASSUMPTIONS)
+
+  // Historical data state
+  const [histPeriod, setHistPeriod] = useState<'t12' | 't6' | 't3'>('t12')
+  const [hist, setHist] = useState<HistData>(EMPTY_HIST)
+
   const { data: property } = useQuery({
     queryKey: ['property', propertyId],
     queryFn: async () => {
@@ -288,6 +335,30 @@ export default function PropertyPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['rent-roll', propertyId] }),
   })
 
+  const saveAssumptions = useMutation({
+    mutationFn: async (values: Assumptions) => {
+      const { error } = await supabase.from('properties').update({ assumptions: values }).eq('id', propertyId!)
+      if (error) throw error
+    },
+    onSuccess: (_, values) => {
+      setAssumptions(values)
+      setAssumptionsOpen(false)
+      qc.invalidateQueries({ queryKey: ['property', propertyId] })
+    },
+  })
+
+  const saveHistoricals = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase.from('properties').update({ historicals: hist }).eq('id', propertyId!)
+      if (error) throw error
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['property', propertyId] }),
+  })
+
+  function setHistField(period: 't12' | 't6' | 't3', field: keyof HistPeriod, value: string) {
+    setHist(h => ({ ...h, [period]: { ...h[period], [field]: parseFloat(value) || 0 } }))
+  }
+
   function startEditUnit(u: any) {
     setEditUnitId(u.id)
     setAddingUnit(false)
@@ -305,6 +376,48 @@ export default function PropertyPage() {
     setAddingUnit(false)
     setUnitForm(EMPTY_UNIT)
   }
+
+  // Sync saved assumptions from DB when property loads
+  useEffect(() => {
+    if (property?.assumptions) {
+      setAssumptions(prev => ({ ...prev, ...(property.assumptions as Partial<Assumptions>) }))
+    }
+  }, [property?.id])
+
+  useEffect(() => {
+    if (!property?.historicals) return
+    const h = property.historicals as any
+    setHist({
+      t12: h.t12 ? { ...EMPTY_PERIOD, ...h.t12 } : { ...EMPTY_PERIOD },
+      t6: h.t6 ? { ...EMPTY_PERIOD, ...h.t6 } : { ...EMPTY_PERIOD },
+      t3: h.t3 ? { ...EMPTY_PERIOD, ...h.t3 } : { ...EMPTY_PERIOD },
+    })
+  }, [property?.id])
+
+  const derivedNOI = useMemo(() => {
+    if (!property) return 0
+    const fallback = assumptions.initialNOI ?? (property.current_value ?? property.purchase_price ?? 10000000) * 0.055
+    if (assumptions.basePeriod === 'property') return fallback
+    const months = PERIOD_MONTHS[assumptions.basePeriod]
+    const { noi } = annualizeHist(hist[assumptions.basePeriod], months)
+    return noi > 0 ? noi : fallback
+  }, [hist, assumptions, property])
+
+  const proFormaRows = useMemo(() => {
+    if (!property) return []
+    return buildProForma({
+      initialNOI: derivedNOI,
+      revenueGrowth: assumptions.revenueGrowth,
+      expenseGrowth: assumptions.expenseGrowth,
+      vacancyRate: assumptions.vacancyRate,
+      operatingExpenseRatio: 0.35,
+      holdYears: assumptions.holdYears,
+      exitCapRate: assumptions.exitCapRate,
+      loanAmount: (property.purchase_price ?? 10000000) * 0.7,
+      annualRate: 0.065, amortYears: 30, ioPeriod: 2,
+      purchasePrice: property.purchase_price ?? 10000000,
+    })
+  }, [property, assumptions, derivedNOI])
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? [])
@@ -427,7 +540,10 @@ export default function PropertyPage() {
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="text-base">Unit Mix</CardTitle>
               <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={() => setImportMode('unit-mix')}>Import from Excel</Button>
+                <Button variant="outline" size="sm" className="gap-1" onClick={() => downloadUnitMixTemplate()}>
+                  <Download className="h-4 w-4" /> Template
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => setImportMode('unit-mix')}>Import Excel</Button>
                 <Button variant="brand" size="sm" className="gap-1" onClick={() => { setAddingUnit(true); setEditUnitId(null); setUnitForm(EMPTY_UNIT) }}>
                   <Plus className="h-4 w-4" /> Add Row
                 </Button>
@@ -522,7 +638,10 @@ export default function PropertyPage() {
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="text-base">Rent Roll ({rentRoll?.length ?? 0} units)</CardTitle>
               <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={() => setImportMode('rent-roll')}>Import from Excel</Button>
+                <Button variant="outline" size="sm" className="gap-1" onClick={() => downloadRentRollTemplate()}>
+                  <Download className="h-4 w-4" /> Template
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => setImportMode('rent-roll')}>Import Excel</Button>
                 <Button variant="brand" size="sm" className="gap-1" onClick={() => { setEditingRent(null); setRentDialogOpen(true) }}>
                   <Plus className="h-4 w-4" /> Add Unit
                 </Button>
@@ -680,14 +799,22 @@ export default function PropertyPage() {
         </TabsContent>
 
         <TabsContent value="proforma" className="mt-4">
-          <ProFormaTable rows={buildProForma({
-            initialNOI: (property.current_value ?? property.purchase_price ?? 10000000) * 0.055,
-            revenueGrowth: 0.03, expenseGrowth: 0.025, vacancyRate: 0.05,
-            operatingExpenseRatio: 0.35, holdYears: 5, exitCapRate: 0.055,
-            loanAmount: (property.purchase_price ?? 10000000) * 0.7,
-            annualRate: 0.065, amortYears: 30, ioPeriod: 2,
-            purchasePrice: property.purchase_price ?? 10000000,
-          })} />
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle className="text-base">Pro Forma ({assumptions.holdYears}-Year Hold)</CardTitle>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" className="gap-1" onClick={() => exportProFormaTable(property.name, proFormaRows)}>
+                  <Download className="h-4 w-4" /> Export
+                </Button>
+                <Button variant="outline" size="sm" className="gap-1" onClick={() => { setAssumptionsForm({ ...assumptions }); setAssumptionsOpen(true) }}>
+                  <Pencil className="h-4 w-4" /> Edit Assumptions
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              <ProFormaTable rows={proFormaRows} />
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="map" className="mt-4">
@@ -711,6 +838,76 @@ export default function PropertyPage() {
           <ScrapePanel propertyId={propertyId!} />
         </TabsContent>
       </Tabs>
+
+      <Dialog open={assumptionsOpen} onOpenChange={setAssumptionsOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Pro Forma Assumptions</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Revenue Growth %</Label>
+                <Input
+                  type="number" step="0.1"
+                  value={(assumptionsForm.revenueGrowth * 100).toFixed(2)}
+                  onChange={e => setAssumptionsForm(f => ({ ...f, revenueGrowth: parseFloat(e.target.value) / 100 || 0 }))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Expense Growth %</Label>
+                <Input
+                  type="number" step="0.1"
+                  value={(assumptionsForm.expenseGrowth * 100).toFixed(2)}
+                  onChange={e => setAssumptionsForm(f => ({ ...f, expenseGrowth: parseFloat(e.target.value) / 100 || 0 }))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Vacancy Rate %</Label>
+                <Input
+                  type="number" step="0.1"
+                  value={(assumptionsForm.vacancyRate * 100).toFixed(2)}
+                  onChange={e => setAssumptionsForm(f => ({ ...f, vacancyRate: parseFloat(e.target.value) / 100 || 0 }))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Exit Cap Rate %</Label>
+                <Input
+                  type="number" step="0.1"
+                  value={(assumptionsForm.exitCapRate * 100).toFixed(2)}
+                  onChange={e => setAssumptionsForm(f => ({ ...f, exitCapRate: parseFloat(e.target.value) / 100 || 0 }))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Hold Years</Label>
+                <Input
+                  type="number" min="1" max="30"
+                  value={assumptionsForm.holdYears}
+                  onChange={e => setAssumptionsForm(f => ({ ...f, holdYears: parseInt(e.target.value) || 5 }))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Initial NOI ($)</Label>
+                <Input
+                  type="number"
+                  value={assumptionsForm.initialNOI ?? ''}
+                  placeholder={`Auto: ${formatCurrency((property.current_value ?? property.purchase_price ?? 10000000) * 0.055)}`}
+                  onChange={e => setAssumptionsForm(f => ({ ...f, initialNOI: e.target.value ? parseFloat(e.target.value) : null }))}
+                />
+              </div>
+            </div>
+          </div>
+          {saveAssumptions.isError && (
+            <p className="text-sm text-destructive">{(saveAssumptions.error as Error).message}</p>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAssumptionsOpen(false)}>Cancel</Button>
+            <Button variant="brand" onClick={() => saveAssumptions.mutate(assumptionsForm)} disabled={saveAssumptions.isPending}>
+              {saveAssumptions.isPending ? 'Saving...' : 'Save & Apply'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <EditPropertyDialog
         open={editOpen}
