@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Navigate } from 'react-router-dom'
-import { Building2 } from 'lucide-react'
+
 import { supabase } from '@/lib/supabaseClient'
 import { useAuth } from '@/hooks/useAuth'
 import { Button } from '@/components/ui/button'
@@ -73,11 +73,14 @@ export default function AuthPage() {
         {/* Brand */}
         <div className="flex flex-col items-center gap-3">
           <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-teal">
-            <Building2 className="h-8 w-8 text-white" />
+            <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" className="h-9 w-9">
+              <path d="M10 3L17 16H12.5L10 11L7.5 16H3L10 3Z" fill="white" opacity="0.9"/>
+              <path d="M7 13H13" stroke="white" strokeWidth="1.5" strokeLinecap="round"/>
+            </svg>
           </div>
           <div className="text-center">
-            <h1 className="text-2xl font-bold">ARDON Insights</h1>
-            <p className="text-sm text-muted-foreground">AI-first investment front office</p>
+            <h1 className="text-2xl font-bold tracking-widest">ARDON</h1>
+            <p className="text-[11px] uppercase tracking-widest text-muted-foreground">Insights</p>
           </div>
         </div>
 
