@@ -446,6 +446,147 @@ export async function exportProFormaTable(propertyName: string, rows: ProFormaYe
   downloadBlob(buffer, `${sanitize(propertyName)}_Pro_Forma.xlsx`, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 }
 
+// ─── Workbook 7: Pro Forma + Historicals ─────────────────────────────────────
+
+export interface HistoricalPeriod {
+  gpi: number; vacancy_pct: number; other_income: number
+  mgmt: number; insurance: number; taxes: number
+  maintenance: number; utilities: number; other_opex: number
+}
+export interface HistoricalData { t12: HistoricalPeriod; t6: HistoricalPeriod; t3: HistoricalPeriod }
+
+export async function exportProFormaHistoricals(
+  propertyName: string,
+  hist: HistoricalData,
+  proForma: ProFormaYear[],
+): Promise<void> {
+  const wb = new ExcelJS.Workbook()
+  wb.creator = 'ARDON Insights'
+
+  // ── Sheet 1: Historicals ──
+  const hSheet = wb.addWorksheet('Historicals')
+  hSheet.getColumn(1).width = 28
+  hSheet.getColumn(2).width = 16
+  hSheet.getColumn(3).width = 16
+  hSheet.getColumn(4).width = 16
+
+  const periods: Array<{ key: keyof HistoricalData; label: string; months: number }> = [
+    { key: 't12', label: 'T12 (Annual)', months: 12 },
+    { key: 't6', label: 'T6 (Annualized)', months: 6 },
+    { key: 't3', label: 'T3 (Annualized)', months: 3 },
+  ]
+
+  const hHeader = hSheet.getRow(1)
+  hHeader.getCell(1).value = 'Line Item'
+  applyHeaderStyle(hHeader.getCell(1))
+  periods.forEach(({ label }, i) => {
+    hHeader.getCell(i + 2).value = label
+    applyHeaderStyle(hHeader.getCell(i + 2), false)
+  })
+  hHeader.height = 25
+
+  const hRows: Array<{ label: string; key: keyof HistoricalPeriod | null; computed?: boolean; sectionHeader?: boolean }> = [
+    { label: 'INCOME', key: null, sectionHeader: true },
+    { label: 'Gross Potential Income', key: 'gpi' },
+    { label: 'Other Income', key: 'other_income' },
+    { label: 'Vacancy Rate (%)', key: 'vacancy_pct' },
+    { label: 'Effective Gross Income', key: null, computed: true },
+    { label: 'OPERATING EXPENSES', key: null, sectionHeader: true },
+    { label: 'Management Fee', key: 'mgmt' },
+    { label: 'Insurance', key: 'insurance' },
+    { label: 'Real Estate Taxes', key: 'taxes' },
+    { label: 'Maintenance & Repairs', key: 'maintenance' },
+    { label: 'Utilities', key: 'utilities' },
+    { label: 'Other Expenses', key: 'other_opex' },
+    { label: 'Total Operating Expenses', key: null, computed: true },
+    { label: 'Net Operating Income', key: null, computed: true },
+  ]
+
+  function computePeriod(p: HistoricalPeriod, months: number) {
+    const f = 12 / months
+    const gpi = p.gpi * f
+    const vacLoss = gpi * (p.vacancy_pct / 100)
+    const egi = gpi - vacLoss + p.other_income * f
+    const opex = (p.mgmt + p.insurance + p.taxes + p.maintenance + p.utilities + p.other_opex) * f
+    return { egi, opex, noi: egi - opex }
+  }
+
+  hRows.forEach(({ label, key, computed, sectionHeader }, ri) => {
+    const row = hSheet.getRow(ri + 2)
+    row.getCell(1).value = label
+    if (sectionHeader) {
+      for (let c = 1; c <= 4; c++) {
+        row.getCell(c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: `FF${NAVY}` } }
+        row.getCell(c).font = { bold: true, color: { argb: `FF${WHITE}` }, size: 10 }
+      }
+    } else if (computed) {
+      applyRowStyle(row.getCell(1), true)
+      periods.forEach(({ key: pk, months }, ci) => {
+        const p = hist[pk]
+        const { egi, opex, noi } = computePeriod(p, months)
+        const val = label.includes('Effective') ? egi : label.includes('Operating') ? -opex : noi
+        const cell = row.getCell(ci + 2)
+        cell.value = val
+        cell.numFmt = '$#,##0'
+        applyRowStyle(cell, true, true)
+        if (label.includes('NOI')) cell.font = { bold: true, color: { argb: val >= 0 ? `FF${GREEN}` : `FF${RED}` } }
+      })
+    } else if (key) {
+      row.getCell(1).font = { size: 10, color: { argb: `FF${NAVY}` } }
+      periods.forEach(({ key: pk, months }, ci) => {
+        const rawVal = hist[pk][key!] as number
+        const displayVal = key === 'vacancy_pct' ? rawVal : rawVal * (12 / months)
+        const cell = row.getCell(ci + 2)
+        cell.value = displayVal
+        cell.numFmt = key === 'vacancy_pct' ? '0.0"%"' : '$#,##0'
+        cell.alignment = { horizontal: 'right', vertical: 'middle' }
+        cell.font = { size: 10 }
+      })
+    }
+    row.height = 18
+  })
+  hSheet.views = [{ state: 'frozen', ySplit: 1 }]
+
+  // ── Sheet 2: Pro Forma Projection ──
+  const pfSheet = wb.addWorksheet('Pro Forma Projection')
+  const pfCols = ['Line Item', ...proForma.map(y => `Year ${y.year}`)]
+  pfCols.forEach((col, i) => {
+    pfSheet.getColumn(i + 1).width = i === 0 ? 28 : 14
+    const cell = pfSheet.getCell(1, i + 1)
+    cell.value = col
+    applyHeaderStyle(cell, i === 0)
+  })
+  pfSheet.getRow(1).height = 25
+
+  const pfRowDefs: Array<{ label: string; key: keyof ProFormaYear; highlight: boolean; negative?: boolean }> = [
+    { label: 'Gross Potential Income', key: 'gpi', highlight: false },
+    { label: 'Vacancy Loss', key: 'vacancyLoss', highlight: false, negative: true },
+    { label: 'Effective Gross Income', key: 'egi', highlight: true },
+    { label: 'Operating Expenses', key: 'operatingExpenses', highlight: false, negative: true },
+    { label: 'Net Operating Income', key: 'noi', highlight: true },
+    { label: 'Debt Service', key: 'debtService', highlight: false, negative: true },
+    { label: 'Cash Flow Before Tax', key: 'cashFlow', highlight: true },
+  ]
+  pfRowDefs.forEach(({ label, key, highlight, negative }, ri) => {
+    const row = pfSheet.getRow(ri + 2)
+    row.getCell(1).value = label
+    applyRowStyle(row.getCell(1), highlight)
+    proForma.forEach((y, ci) => {
+      const val = (y[key] as number) ?? 0
+      const cell = row.getCell(ci + 2)
+      cell.value = negative ? -Math.abs(val) : val
+      cell.numFmt = '$#,##0'
+      applyRowStyle(cell, highlight, true)
+      if (key === 'cashFlow') cell.font = { bold: true, color: { argb: val >= 0 ? `FF${GREEN}` : `FF${RED}` } }
+    })
+    row.height = 20
+  })
+  pfSheet.views = [{ state: 'frozen', xSplit: 1, ySplit: 1 }]
+
+  const buffer = await wb.xlsx.writeBuffer()
+  downloadBlob(buffer, `${sanitize(propertyName)}_ProForma_Historicals.xlsx`, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function downloadBlob(data: ExcelJS.Buffer, filename: string, mimeType: string) {

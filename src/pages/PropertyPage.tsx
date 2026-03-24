@@ -18,7 +18,7 @@ import { formatCurrency, cn } from '@/lib/utils'
 import ProFormaTable from '@/components/ProFormaTable'
 import PropertyMap3D from '@/components/PropertyMap3D'
 import { buildProForma } from '@/lib/calculators'
-import { downloadUnitMixTemplate, downloadRentRollTemplate, exportProFormaTable } from '@/lib/exportExcel'
+import { downloadUnitMixTemplate, downloadRentRollTemplate, exportProFormaTable, exportProFormaHistoricals } from '@/lib/exportExcel'
 import ScrapePanel from '@/components/ScrapePanel'
 
 function getFileType(filename: string): string {
@@ -798,16 +798,139 @@ export default function PropertyPage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="proforma" className="mt-4">
+        <TabsContent value="proforma" className="mt-4 space-y-4">
+          {/* Historical Financials */}
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between pb-3">
+              <div>
+                <CardTitle className="text-base">Historical Financials</CardTitle>
+                <p className="text-xs text-muted-foreground mt-0.5">Enter actual amounts for the trailing period. T6/T3 are annualized.</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="flex rounded-md border border-border overflow-hidden text-xs">
+                  {(['t12', 't6', 't3'] as const).map(p => (
+                    <button key={p} onClick={() => setHistPeriod(p)}
+                      className={cn('px-3 py-1.5 font-medium transition-colors', histPeriod === p ? 'bg-brand-teal text-white' : 'text-muted-foreground hover:bg-secondary')}>
+                      {p.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+                <Button size="sm" variant="brand" onClick={() => saveHistoricals.mutate()} disabled={saveHistoricals.isPending}>
+                  {saveHistoricals.isPending ? 'Saving...' : 'Save'}
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              {(() => {
+                const months = PERIOD_MONTHS[histPeriod]
+                const factor = 12 / months
+                const { gpi: annGPI, egi, opex, noi } = annualizeHist(hist[histPeriod], months)
+                const period = hist[histPeriod]
+                const INCOME_ROWS: { key: keyof HistPeriod; label: string }[] = [
+                  { key: 'gpi', label: 'Gross Potential Income' },
+                  { key: 'other_income', label: 'Other Income' },
+                ]
+                const EXPENSE_ROWS: { key: keyof HistPeriod; label: string }[] = [
+                  { key: 'mgmt', label: 'Management Fee' },
+                  { key: 'insurance', label: 'Insurance' },
+                  { key: 'taxes', label: 'Real Estate Taxes' },
+                  { key: 'maintenance', label: 'Maintenance & Repairs' },
+                  { key: 'utilities', label: 'Utilities' },
+                  { key: 'other_opex', label: 'Other Expenses' },
+                ]
+                return (
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border">
+                        <th className="px-4 py-2 text-left text-xs font-semibold text-muted-foreground w-52">Line Item</th>
+                        <th className="px-4 py-2 text-right text-xs font-semibold text-muted-foreground w-44">{histPeriod.toUpperCase()} Amount</th>
+                        <th className="px-4 py-2 text-right text-xs font-semibold text-muted-foreground">Annualized</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr className="bg-secondary/30 border-b border-border/50">
+                        <td colSpan={3} className="px-4 py-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Income</td>
+                      </tr>
+                      {INCOME_ROWS.map(({ key, label }) => (
+                        <tr key={key} className="border-b border-border/50 hover:bg-secondary/20">
+                          <td className="px-4 py-1.5 text-xs text-muted-foreground">{label}</td>
+                          <td className="px-4 py-1.5 text-right">
+                            <Input type="number" value={period[key] || ''} onChange={e => setHistField(histPeriod, key, e.target.value)}
+                              className="h-6 w-36 text-right text-xs ml-auto" />
+                          </td>
+                          <td className="px-4 py-1.5 text-right text-xs font-mono text-muted-foreground">{formatCurrency((period[key] as number) * factor)}</td>
+                        </tr>
+                      ))}
+                      <tr className="border-b border-border/50 hover:bg-secondary/20">
+                        <td className="px-4 py-1.5 text-xs text-muted-foreground">Vacancy Rate</td>
+                        <td className="px-4 py-1.5 text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <Input type="number" value={period.vacancy_pct || ''} onChange={e => setHistField(histPeriod, 'vacancy_pct', e.target.value)}
+                              className="h-6 w-24 text-right text-xs" />
+                            <span className="text-xs text-muted-foreground">%</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-1.5 text-right text-xs font-mono text-muted-foreground">{period.vacancy_pct.toFixed(1)}%</td>
+                      </tr>
+                      <tr className="border-b border-border bg-brand-teal/5">
+                        <td className="px-4 py-1.5 text-xs font-semibold">Effective Gross Income</td>
+                        <td />
+                        <td className="px-4 py-1.5 text-right text-xs font-semibold font-mono">{formatCurrency(egi)}</td>
+                      </tr>
+                      <tr className="bg-secondary/30 border-b border-border/50">
+                        <td colSpan={3} className="px-4 py-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Operating Expenses</td>
+                      </tr>
+                      {EXPENSE_ROWS.map(({ key, label }) => (
+                        <tr key={key} className="border-b border-border/50 hover:bg-secondary/20">
+                          <td className="px-4 py-1.5 text-xs text-muted-foreground">{label}</td>
+                          <td className="px-4 py-1.5 text-right">
+                            <Input type="number" value={period[key] || ''} onChange={e => setHistField(histPeriod, key, e.target.value)}
+                              className="h-6 w-36 text-right text-xs ml-auto" />
+                          </td>
+                          <td className="px-4 py-1.5 text-right text-xs font-mono text-muted-foreground">{formatCurrency((period[key] as number) * factor)}</td>
+                        </tr>
+                      ))}
+                      <tr className="border-b border-border bg-secondary/30">
+                        <td className="px-4 py-1.5 text-xs font-semibold">Total Operating Expenses</td>
+                        <td />
+                        <td className="px-4 py-1.5 text-right text-xs font-semibold font-mono text-red-400">({formatCurrency(opex)})</td>
+                      </tr>
+                      <tr className="bg-brand-teal/5">
+                        <td className="px-4 py-2 text-sm font-bold">Net Operating Income</td>
+                        <td />
+                        <td className={cn('px-4 py-2 text-right text-sm font-bold font-mono', noi >= 0 ? 'text-emerald-400' : 'text-red-400')}>{formatCurrency(noi)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                )
+              })()}
+            </CardContent>
+          </Card>
+
+          {/* Pro Forma Projection */}
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="text-base">Pro Forma ({assumptions.holdYears}-Year Hold)</CardTitle>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" className="gap-1" onClick={() => exportProFormaTable(property.name, proFormaRows)}>
+              <div>
+                <CardTitle className="text-base">Pro Forma ({assumptions.holdYears}-Year Hold)</CardTitle>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Base NOI: <span className="font-semibold text-foreground font-mono">{formatCurrency(derivedNOI)}</span>
+                  {assumptions.basePeriod !== 'property' && <span className="ml-1">(from {assumptions.basePeriod.toUpperCase()}{assumptions.basePeriod !== 't12' ? ', annualized' : ''})</span>}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="flex rounded-md border border-border overflow-hidden text-xs">
+                  {(['conservative', 'base', 'optimistic'] as const).map(p => (
+                    <button key={p} onClick={() => setAssumptions(a => ({ ...a, ...UW_PRESETS[p], preset: p }))}
+                      className={cn('px-2.5 py-1.5 font-medium capitalize transition-colors', assumptions.preset === p ? 'bg-brand-teal text-white' : 'text-muted-foreground hover:bg-secondary')}>
+                      {p}
+                    </button>
+                  ))}
+                </div>
+                <Button variant="outline" size="sm" className="gap-1" onClick={() => exportProFormaHistoricals(property.name, hist, proFormaRows)}>
                   <Download className="h-4 w-4" /> Export
                 </Button>
                 <Button variant="outline" size="sm" className="gap-1" onClick={() => { setAssumptionsForm({ ...assumptions }); setAssumptionsOpen(true) }}>
-                  <Pencil className="h-4 w-4" /> Edit Assumptions
+                  <Pencil className="h-4 w-4" /> Edit
                 </Button>
               </div>
             </CardHeader>
@@ -894,6 +1017,18 @@ export default function PropertyPage() {
                   placeholder={`Auto: ${formatCurrency((property.current_value ?? property.purchase_price ?? 10000000) * 0.055)}`}
                   onChange={e => setAssumptionsForm(f => ({ ...f, initialNOI: e.target.value ? parseFloat(e.target.value) : null }))}
                 />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Base Period (NOI source)</Label>
+                <Select value={assumptionsForm.basePeriod} onValueChange={v => setAssumptionsForm(f => ({ ...f, basePeriod: v as Assumptions['basePeriod'] }))}>
+                  <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="t12">T12 — Trailing 12 Months</SelectItem>
+                    <SelectItem value="t6">T6 — Trailing 6 Months (×2)</SelectItem>
+                    <SelectItem value="t3">T3 — Trailing 3 Months (×4)</SelectItem>
+                    <SelectItem value="property">Property NOI / Manual</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
           </div>
